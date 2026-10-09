@@ -7,6 +7,8 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Library untuk Ekspor Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <style>
         /* Animasi standar yang sebelumnya digunakan oleh Tailwind */
@@ -24,8 +26,8 @@
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
-        import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
-        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase } from 'https://esm.sh/lucide-react@0.359.0';
+        import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, doc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
+        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download } from 'https://esm.sh/lucide-react@0.359.0';
 
         const DATA_KECAMATAN = [
           "Galela", "Galela Barat", "Galela Selatan", "Galela Utara", "Kao", "Kao Barat", 
@@ -96,14 +98,15 @@
         const TOTAL_EXPECTED_KOMBEL = Object.values(NAMA_KOMBEL_MAPPING).reduce((sum, arr) => sum + arr.length, 0); 
         const TOTAL_EXPECTED_PENGURUS = Object.values(TARGET_PENGURUS_KOMBEL).reduce((sum, val) => sum + val, 0); 
 
-        // PENTING: Ganti konfigurasi di bawah dengan konfigurasi Firebase milik Anda
+        // Konfigurasi Firebase Anda
         const firebaseConfig = {
-            apiKey: "ISI_API_KEY_ANDA",
-            authDomain: "ISI_AUTH_DOMAIN_ANDA",
-            projectId: "ISI_PROJECT_ID_ANDA",
-            storageBucket: "ISI_STORAGE_BUCKET_ANDA",
-            messagingSenderId: "ISI_MESSAGING_SENDER_ID_ANDA",
-            appId: "ISI_APP_ID_ANDA"
+          apiKey: "AIzaSyB3N4uaAILOTFZG6BoeotXGMxNKfpxf6oo",
+          authDomain: "pengurus-kombel.firebaseapp.com",
+          projectId: "pengurus-kombel",
+          storageBucket: "pengurus-kombel.firebasestorage.app",
+          messagingSenderId: "1026260658552",
+          appId: "1:1026260658552:web:88fe94588bdcc1c4eb408d",
+          measurementId: "G-G6FZYS8153"
         };
 
         const isLocalMode = firebaseConfig.apiKey === "ISI_API_KEY_ANDA" || !firebaseConfig.apiKey;
@@ -149,7 +152,6 @@
 
           useEffect(() => {
             if (isLocalMode) {
-                // Memberikan data bawaan (mock) jika berjalan pada Mode Lokal
                 setSubmissions([
                     {
                         id: 'mock-1',
@@ -243,7 +245,6 @@
                 if (formData.statusSK === 'belum') dataToSave.linkSK = ''; 
 
                 if (isLocalMode) {
-                    // Simpan data secara lokal di RAM (akan hilang saat di-refresh)
                     const newSubmission = { id: `local-${Date.now()}`, ...dataToSave };
                     setSubmissions(prev => [...prev, newSubmission]);
                 } else {
@@ -294,6 +295,81 @@
                 console.error("Error updating SK:", error);
                 setUploadModal(prev => ({ ...prev, error: "Gagal mengupdate SK. Coba periksa izin database Anda."}));
             }
+          };
+
+          // FUNGSI MENGHAPUS DATA DENGAN PASSWORD "siska"
+          const handleDelete = async (id, namaKombel) => {
+            const inputPassword = window.prompt(`Masukkan password untuk menghapus data "${namaKombel}":`);
+            
+            if (inputPassword === null) return; // Pengguna menekan tombol Batal
+
+            if (inputPassword !== "siska") {
+                alert("Password salah! Data tidak dapat dihapus.");
+                return;
+            }
+
+            const isConfirm = window.confirm(`Apakah Anda yakin ingin menghapus data kombel "${namaKombel}"?`);
+            if (!isConfirm) return;
+            
+            try {
+                if (isLocalMode) {
+                    setSubmissions(prev => prev.filter(item => item.id !== id));
+                } else {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', id);
+                    await deleteDoc(docRef);
+                }
+                alert("Data berhasil dihapus.");
+            } catch (error) {
+                console.error("Error menghapus data:", error);
+                alert("Gagal menghapus data. Periksa aturan keamanan database Anda.");
+            }
+          };
+
+          // FUNGSI DOWNLOAD EXCEL
+          const handleDownloadExcel = (dataToExport) => {
+            if (!dataToExport || dataToExport.length === 0) {
+                alert("Tidak ada data untuk diunduh!");
+                return;
+            }
+
+            const excelData = dataToExport.map((item, index) => ({
+                "No": index + 1,
+                "Kecamatan": item.kecamatan || '',
+                "Jenis Kombel": item.jenisKombel || '',
+                "Jenis Pengurus": item.jenisPengurus || '',
+                "Nama Kombel": item.namaKombel || '',
+                "Nama Ketua": item.namaKetua || '',
+                "Instansi Ketua": item.instansiKetua || '',
+                "No HP Ketua": item.noHpKetua || '',
+                "Nama Wakil Ketua": item.namaWakilKetua || '',
+                "Instansi Wakil Ketua": item.instansiWakilKetua || '',
+                "No HP Wakil Ketua": item.noHpWakilKetua || '',
+                "Nama Sekretaris": item.namaSekretaris || '',
+                "Instansi Sekretaris": item.instansiSekretaris || '',
+                "No HP Sekretaris": item.noHpSekretaris || '',
+                "Nama Bendahara": item.namaBendahara || '',
+                "Instansi Bendahara": item.instansiBendahara || '',
+                "No HP Bendahara": item.noHpBendahara || '',
+                "Bidang Pendidikan": item.namaPendidikan || '',
+                "Instansi Pendidikan": item.instansiPendidikan || '',
+                "No HP Pendidikan": item.noHpPendidikan || '',
+                "Bidang Perencanaan": item.namaPerencanaan || '',
+                "Instansi Perencanaan": item.instansiPerencanaan || '',
+                "No HP Perencanaan": item.noHpPerencanaan || '',
+                "Bidang Humas": item.namaHumas || '',
+                "Instansi Humas": item.instansiHumas || '',
+                "No HP Humas": item.noHpHumas || '',
+                "Bidang Dokumentasi": item.namaDokumentasi || '',
+                "Instansi Dokumentasi": item.instansiDokumentasi || '',
+                "No HP Dokumentasi": item.noHpDokumentasi || '',
+                "Status SK": item.linkSK ? 'Sudah Ada SK' : 'Belum Ada SK',
+                "Link SK": item.linkSK || ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data Hasil Isian");
+            XLSX.writeFile(workbook, `Data_Hasil_Isian_Kombel_${new Date().toISOString().slice(0, 10)}.xlsx`);
           };
 
           const stats = useMemo(() => {
@@ -347,10 +423,20 @@
             return (
                 <div className="space-y-6 animate-fadeIn">
                     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden p-6">
-                        <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                            <Database className="w-5 h-5 text-indigo-500" />
-                            Data Hasil Isian Responden
-                        </h2>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                                <Database className="w-5 h-5 text-indigo-500" />
+                                Data Hasil Isian Responden
+                            </h2>
+                            {/* Tombol Download Excel */}
+                            <button 
+                                onClick={() => handleDownloadExcel(filteredData)}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+                            >
+                                <Download className="w-4 h-4" />
+                                Download Excel
+                            </button>
+                        </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                             <div className="relative">
@@ -387,7 +473,7 @@
                                         <th className="px-4 py-3 font-medium">Jenis Pengurus</th>
                                         <th className="px-4 py-3 font-medium">Nama Kombel</th>
                                         <th className="px-4 py-3 font-medium text-center">SK</th>
-                                        <th className="px-4 py-3 font-medium text-center">Upload / Detail</th>
+                                        <th className="px-4 py-3 font-medium text-center">Upload SK / Detail / Hapus</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -416,6 +502,10 @@
                                                         )}
                                                         <button onClick={() => setDetailModal(item)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md" title="Lihat Detail">
                                                             <Eye className="w-4 h-4" />
+                                                        </button>
+                                                        {/* Tombol Hapus dengan Proteksi Password "siska" */}
+                                                        <button onClick={() => handleDelete(item.id, item.namaKombel)} className="p-1.5 text-red-600 hover:bg-red-100 rounded-md" title="Hapus Data">
+                                                            <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
                                                 </td>
