@@ -333,7 +333,7 @@
                     const newSubmission = { id: `local-${Date.now()}`, ...dataToSave };
                     setSubmissions(prev => [...prev, newSubmission]);
                 } else {
-                    if (!auth.currentUser) throw new Error("Tidak ada akses otentikasi.");
+                    // MENGHAPUS BLOKIRAN KEAMANAN: Biarkan sistem menyimpan data tanpa perlu login (public access)
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'submissions'), dataToSave);
                 }
 
@@ -360,9 +360,11 @@
 
             } catch (error) {
                 console.error("Error submitting form:", error);
-                setMessage({ type: 'error', text: 'Gagal menyimpan data atau mengunggah file. Silakan coba lagi.' });
+                // Menampilkan pesan error yang lebih jelas di UI agar tombol tidak sekadar tersangkut
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                setMessage({ type: 'error', text: `Gagal menyimpan data/file. Pesan sistem: ${errorMsg}` });
             } finally {
-                setSubmitting(false);
+                setSubmitting(false); // Memastikan tombol kembali ke "Kirim Data" walau terjadi error
             }
           };
 
@@ -377,14 +379,14 @@
                 let uploadedLinkSK = '';
                 
                 if (!isLocalMode && storage) {
-                    // 1. HAPUS FILE LAMA JIKA ADA
+                    // 1. HAPUS FILE LAMA JIKA ADA (Mencegah file ganda dan penumpukan memori)
                     if (uploadModal.linkSK) {
                         try {
                             const oldFileRef = ref(storage, uploadModal.linkSK);
                             await deleteObject(oldFileRef);
-                            console.log("File lama berhasil dihapus untuk menghemat ruang.");
+                            console.log("File lama berhasil dihapus untuk menghemat memori.");
                         } catch (deleteErr) {
-                            console.warn("Gagal menghapus file lama (mungkin sudah terhapus):", deleteErr);
+                            console.warn("Gagal menghapus file lama (mungkin sudah terhapus di server):", deleteErr);
                         }
                     }
 
@@ -423,7 +425,8 @@
                 setModalUploadProgress(0);
             } catch (error) {
                 console.error("Error updating SK:", error);
-                setUploadModal(prev => ({ ...prev, error: "Gagal mengunggah dan memperbarui SK."}));
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                setUploadModal(prev => ({ ...prev, error: `Gagal mengunggah SK baru: ${errorMsg}`}));
             } finally {
                 setSubmitting(false);
             }
