@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PENA HALUT_Pengurus Kombel - Sistem Pendataan Pengurus Komunitas Belajar</title>
+    <title>PENA HALUT_Pengurus Kombel</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -324,9 +324,26 @@
             }
           };
 
+          // FUNGSI HELPER FORMAT WA UNTUK ADMIN
+          const formatPhoneForWA = (phone) => {
+              if (!phone) return '';
+              let formatted = String(phone).replace(/\D/g, '');
+              if (formatted.startsWith('0')) formatted = '62' + formatted.substring(1);
+              return formatted;
+          };
+
+          // FUNGSI MENGOSONGKAN NOMOR HP SAAT FORM EDIT DIBUKA
+          const getEditDataWithHiddenPhones = (item) => {
+              return {
+                  ...item,
+                  noHpKetua: '', noHpWakilKetua: '', noHpSekretaris: '', noHpBendahara: '',
+                  noHpPendidikan: '', noHpPerencanaan: '', noHpHumas: '', noHpDokumentasi: ''
+              };
+          };
+
           const handleEditModal = (item) => {
               setDetailModal(item);
-              setEditFormData(item);
+              setEditFormData(getEditDataWithHiddenPhones(item));
               setIsEditingDetail(false);
               setEditSkFile(null);
               setEditTargets([]);
@@ -382,6 +399,17 @@
                     statusVerifikasi: 'direvisi',
                     pesanPerbaikan: ''
                 };
+
+                // Kembalikan nomor HP lama jika responden membiarkannya kosong saat edit
+                if (!dataToSave.noHpKetua) dataToSave.noHpKetua = detailModal.noHpKetua || '';
+                if (!dataToSave.noHpWakilKetua) dataToSave.noHpWakilKetua = detailModal.noHpWakilKetua || '';
+                if (!dataToSave.noHpSekretaris) dataToSave.noHpSekretaris = detailModal.noHpSekretaris || '';
+                if (!dataToSave.noHpBendahara) dataToSave.noHpBendahara = detailModal.noHpBendahara || '';
+                if (!dataToSave.noHpPendidikan) dataToSave.noHpPendidikan = detailModal.noHpPendidikan || '';
+                if (!dataToSave.noHpPerencanaan) dataToSave.noHpPerencanaan = detailModal.noHpPerencanaan || '';
+                if (!dataToSave.noHpHumas) dataToSave.noHpHumas = detailModal.noHpHumas || '';
+                if (!dataToSave.noHpDokumentasi) dataToSave.noHpDokumentasi = detailModal.noHpDokumentasi || '';
+
                 const idToUpdate = detailModal.id;
                 delete dataToSave.id;
 
@@ -528,7 +556,7 @@
                   return t;
               }).join(', ');
 
-              const message = `Halo Pengurus Kombel *${item.namaKombel}*,\n\nMohon maaf, ada data di *PENA HALUT* yang perlu diperbaiki.\n\n*Bagian yang harus diperbaiki:*\n${targetText}\n\n*Catatan Admin:*\n${catatan || 'Mohon cek kembali dan lengkapi data Anda.'}\n\nSilakan buka kembali aplikasi Pengurus Kombel pada link di bawah ini:\n\nhttps://harli400-glitch.github.io/Pengurus_Kombel/\n\nCari nama kombel anda pada layar utama dan lakukan perbaikan pada menu yang muncul di layar utama.\n\nTerima kasih.`;
+              const message = `Halo Pengurus Kombel *${item.namaKombel}*,\n\nMohon maaf, ada data di *PENA HALUT* yang perlu diperbaiki.\n\n*Bagian yang harus diperbaiki:*\n${targetText}\n\n*Catatan Admin:*\n${catatan || 'Mohon cek kembali dan lengkapi data Anda.'}\n\nSilakan buka kembali aplikasi PENA HALUT pada link:\n\nhttps://harli400-glitch.github.io/Pengurus_Kombel/\n\nCari nama kombel anda yang muncul pada layar utama dan melakukan perbaikan pada menu yang muncul di layar utama.\n\nTerima kasih.`;
 
               const encodedMessage = encodeURIComponent(message);
               window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
@@ -582,7 +610,7 @@
           // MEMBUKA FITUR EDIT OTOMATIS SESUAI REKOMENDASI ADMIN
           const handleOpenEditFromPopup = (item) => {
               setDetailModal(item);
-              setEditFormData(item);
+              setEditFormData(getEditDataWithHiddenPhones(item));
               setIsEditingDetail(true);
               setEditSkFile(null);
               
@@ -674,6 +702,20 @@
             XLSX.utils.book_append_sheet(workbook, worksheet, "Data Hasil Isian");
             XLSX.writeFile(workbook, `Data_Hasil_Isian_Kombel_${new Date().toISOString().slice(0, 10)}.xlsx`);
           };
+
+          const renderPengurusDetail = (label, nama, instansi, noHp) => (
+              <div className="flex border-b border-slate-100 pb-3 pt-1 items-start flex-col sm:flex-row gap-1.5 sm:gap-0">
+                  <div className="w-full sm:w-1/3 text-slate-500 text-sm font-medium">{label}</div>
+                  <div className="w-full sm:w-2/3 text-sm flex flex-col gap-1.5">
+                      <div className="font-semibold text-slate-800">{nama || '-'} <span className="text-slate-500 text-xs font-normal">({instansi || '-'})</span></div>
+                      {isAdmin && noHp && (
+                          <a href={`https://wa.me/${formatPhoneForWA(noHp)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md w-fit transition-colors border border-emerald-200 shadow-sm">
+                              <MessageCircle className="w-3.5 h-3.5" /> Chat WA ({noHp})
+                          </a>
+                      )}
+                  </div>
+              </div>
+          );
 
           const stats = useMemo(() => {
             const totalSubmitted = submissions.length; 
@@ -970,9 +1012,9 @@
               <div className="px-6 py-5 border-b border-slate-100 bg-indigo-50/50">
                 <h2 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
                     <FileText className="w-5 h-5" />
-                    Formulir Pendataan Pengurus Kombel
+                    Formulir Pendataan Kombel
                 </h2>
-                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data pengurus komunitas belajar Anda di bawah ini.</p>
+                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data komunitas belajar Anda di bawah ini.</p>
               </div>
 
               <div className="p-6">
@@ -1292,24 +1334,22 @@
                                       
                                       <div>
                                           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Susunan Pengurus Inti</h4>
-                                          <div className="space-y-3 text-sm">
-                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Ketua</div><div className="w-2/3 font-medium">{detailModal.namaKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiKetua || '-'})</span></div></div>
-                                              {detailModal.namaWakilKetua && (
-                                                  <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Wakil Ketua</div><div className="w-2/3 font-medium">{detailModal.namaWakilKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiWakilKetua || '-'})</span></div></div>
-                                              )}
-                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Sekretaris</div><div className="w-2/3 font-medium">{detailModal.namaSekretaris || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiSekretaris || '-'})</span></div></div>
-                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Bendahara</div><div className="w-2/3 font-medium">{detailModal.namaBendahara || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiBendahara || '-'})</span></div></div>
+                                          <div className="space-y-1 text-sm bg-slate-50 p-4 rounded-lg">
+                                              {renderPengurusDetail('Ketua', detailModal.namaKetua, detailModal.instansiKetua, detailModal.noHpKetua)}
+                                              {detailModal.namaWakilKetua && renderPengurusDetail('Wakil Ketua', detailModal.namaWakilKetua, detailModal.instansiWakilKetua, detailModal.noHpWakilKetua)}
+                                              {renderPengurusDetail('Sekretaris', detailModal.namaSekretaris, detailModal.instansiSekretaris, detailModal.noHpSekretaris)}
+                                              {renderPengurusDetail('Bendahara', detailModal.namaBendahara, detailModal.instansiBendahara, detailModal.noHpBendahara)}
                                           </div>
                                       </div>
 
                                       {(detailModal.namaPendidikan || detailModal.namaPerencanaan || detailModal.namaHumas || detailModal.namaDokumentasi) && (
                                           <div>
                                               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bidang-Bidang</h4>
-                                              <div className="space-y-3 text-sm">
-                                                  {detailModal.namaPendidikan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Pendidikan</div><div className="w-2/3 font-medium">{detailModal.namaPendidikan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPendidikan})</span></div></div>}
-                                                  {detailModal.namaPerencanaan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Perencanaan</div><div className="w-2/3 font-medium">{detailModal.namaPerencanaan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPerencanaan})</span></div></div>}
-                                                  {detailModal.namaHumas && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Humas</div><div className="w-2/3 font-medium">{detailModal.namaHumas} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiHumas})</span></div></div>}
-                                                  {detailModal.namaDokumentasi && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Dokumentasi</div><div className="w-2/3 font-medium">{detailModal.namaDokumentasi} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiDokumentasi})</span></div></div>}
+                                              <div className="space-y-1 text-sm bg-slate-50 p-4 rounded-lg">
+                                                  {detailModal.namaPendidikan && renderPengurusDetail('Pendidikan', detailModal.namaPendidikan, detailModal.instansiPendidikan, detailModal.noHpPendidikan)}
+                                                  {detailModal.namaPerencanaan && renderPengurusDetail('Perencanaan', detailModal.namaPerencanaan, detailModal.instansiPerencanaan, detailModal.noHpPerencanaan)}
+                                                  {detailModal.namaHumas && renderPengurusDetail('Humas', detailModal.namaHumas, detailModal.instansiHumas, detailModal.noHpHumas)}
+                                                  {detailModal.namaDokumentasi && renderPengurusDetail('Dokumentasi', detailModal.namaDokumentasi, detailModal.instansiDokumentasi, detailModal.noHpDokumentasi)}
                                               </div>
                                           </div>
                                       )}
@@ -1445,7 +1485,7 @@
                                                   </div>
                                                   <div>
                                                       <label className="block text-xs font-medium text-slate-600 mb-1">No HP/WA</label>
-                                                      <input type="tel" name={`noHp${target}`} value={editFormData[`noHp${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                      <input type="tel" name={`noHp${target}`} value={editFormData[`noHp${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="kosongkan jika sama" />
                                                   </div>
                                               </div>
                                           </div>
