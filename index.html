@@ -27,7 +27,7 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
         import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, doc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
-        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download, Edit2, Save, Bell, Lock, Unlock, FileX, MessageSquare, MessageCircle } from 'https://esm.sh/lucide-react@0.359.0';
+        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download, Edit2, Save, Bell, Lock, Unlock, FileX, MessageSquare, MessageCircle, ShieldCheck } from 'https://esm.sh/lucide-react@0.359.0';
 
         const DATA_KECAMATAN = [
           "Galela", "Galela Barat", "Galela Selatan", "Galela Utara", "Kao", "Kao Barat", 
@@ -339,6 +339,33 @@
                   noHpKetua: '', noHpWakilKetua: '', noHpSekretaris: '', noHpBendahara: '',
                   noHpPendidikan: '', noHpPerencanaan: '', noHpHumas: '', noHpDokumentasi: ''
               };
+          };
+
+          // FUNGSI ADMIN: VERIFIKASI DITERIMA
+          const handleTerimaVerifikasi = async (id, namaKombel) => {
+            const isConfirm = window.confirm(`Apakah Anda yakin ingin menandai data kombel "${namaKombel}" telah DIVERIFIKASI dan DITERIMA?`);
+            if (!isConfirm) return;
+
+            try {
+                const updatePayload = {
+                    statusVerifikasi: 'diterima',
+                    pesanPerbaikan: '',
+                    targetPerbaikan: []
+                };
+
+                if (isLocalMode) {
+                    setSubmissions(prev => prev.map(item => 
+                        item.id === id ? { ...item, ...updatePayload } : item
+                    ));
+                } else {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', id);
+                    await updateDoc(docRef, updatePayload);
+                }
+                alert("Data berhasil diverifikasi dan diterima.");
+            } catch (error) {
+                console.error("Error verifying data:", error);
+                alert("Gagal memverifikasi data. " + error.message);
+            }
           };
 
           const handleEditModal = (item) => {
@@ -840,12 +867,13 @@
                                         <th className="px-4 py-3 font-medium">Jenis Pengurus</th>
                                         <th className="px-4 py-3 font-medium">Nama Kombel</th>
                                         <th className="px-4 py-3 font-medium text-center">SK</th>
-                                        <th className="px-4 py-3 font-medium text-center">Upload / Detail {isAdmin && '/ Admin'}</th>
+                                        <th className="px-4 py-3 font-medium text-center">Status</th>
+                                        <th className="px-4 py-3 font-medium text-center">Aksi {isAdmin && '/ Admin'}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredData.length === 0 ? (
-                                        <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-500">Belum ada data ditemukan</td></tr>
+                                        <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Belum ada data ditemukan</td></tr>
                                     ) : (
                                         filteredData.map((item, index) => (
                                             <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -861,6 +889,17 @@
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
+                                                    {item.statusVerifikasi === 'diterima' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200" title="Data telah diverifikasi dan diterima admin">Diterima</span>
+                                                    ) : item.statusVerifikasi === 'perlu_perbaikan' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200" title="Menunggu perbaikan dari responden">Perlu Perbaikan</span>
+                                                    ) : item.statusVerifikasi === 'direvisi' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200" title="Data telah diperbarui oleh responden">Direvisi</span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">Belum</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
                                                     <div className="flex items-center justify-center gap-2">
                                                         {!item.linkSK && (
                                                             <button onClick={() => setUploadModal(item)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md" title="Upload File SK PDF">
@@ -872,6 +911,11 @@
                                                         </button>
                                                         {isAdmin && (
                                                             <>
+                                                                {item.statusVerifikasi !== 'diterima' && (
+                                                                    <button onClick={() => handleTerimaVerifikasi(item.id, item.namaKombel)} className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded-md" title="Tandai Diverifikasi & Diterima">
+                                                                        <ShieldCheck className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
                                                                 <button onClick={() => setAdminVerifyModal({ id: item.id, namaKombel: item.namaKombel, targets: ['sk_kombel'], pesan: '' })} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-md" title="Verifikasi & Minta Perbaikan">
                                                                     <AlertCircle className="w-4 h-4" />
                                                                 </button>
@@ -1012,9 +1056,9 @@
               <div className="px-6 py-5 border-b border-slate-100 bg-indigo-50/50">
                 <h2 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
                     <FileText className="w-5 h-5" />
-                    Formulir Pendataan Kombel
+                    Formulir Pendataan Pengurus Kombel
                 </h2>
-                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data komunitas belajar Anda di bawah ini.</p>
+                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data pengurus komunitas belajar Anda di bawah ini.</p>
               </div>
 
               <div className="p-6">
@@ -1093,16 +1137,16 @@
                             <h4 className="font-medium text-slate-700">Ketua Kombel</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Nama Ketua</label>
-                                    <input type="text" name="namaKetua" value={formData.namaKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                    <label className="block text-xs text-slate-500 mb-1">Nama Ketua <span className="text-red-500">*</span></label>
+                                    <input type="text" name="namaKetua" value={formData.namaKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Instansi Ketua</label>
-                                    <input type="text" name="instansiKetua" value={formData.instansiKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                    <label className="block text-xs text-slate-500 mb-1">Instansi Ketua <span className="text-red-500">*</span></label>
+                                    <input type="text" name="instansiKetua" value={formData.instansiKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Ketua</label>
-                                    <input type="tel" name="noHpKetua" value={formData.noHpKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Ketua <span className="text-red-500">*</span></label>
+                                    <input type="tel" name="noHpKetua" value={formData.noHpKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                 </div>
                             </div>
                         </div>
@@ -1112,16 +1156,16 @@
                                 <h4 className="font-medium text-slate-700">Wakil Ketua Kombel</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-xs text-slate-500 mb-1">Nama Wakil Ketua</label>
-                                        <input type="text" name="namaWakilKetua" value={formData.namaWakilKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                        <label className="block text-xs text-slate-500 mb-1">Nama Wakil Ketua <span className="text-red-500">*</span></label>
+                                        <input type="text" name="namaWakilKetua" value={formData.namaWakilKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                     </div>
                                     <div>
-                                        <label className="block text-xs text-slate-500 mb-1">Instansi Wakil Ketua</label>
-                                        <input type="text" name="instansiWakilKetua" value={formData.instansiWakilKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                        <label className="block text-xs text-slate-500 mb-1">Instansi Wakil Ketua <span className="text-red-500">*</span></label>
+                                        <input type="text" name="instansiWakilKetua" value={formData.instansiWakilKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                     </div>
                                     <div>
-                                        <label className="block text-xs text-slate-500 mb-1">No HP/WA Wakil Ketua</label>
-                                        <input type="tel" name="noHpWakilKetua" value={formData.noHpWakilKetua} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                        <label className="block text-xs text-slate-500 mb-1">No HP/WA Wakil Ketua <span className="text-red-500">*</span></label>
+                                        <input type="tel" name="noHpWakilKetua" value={formData.noHpWakilKetua} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                     </div>
                                 </div>
                             </div>
@@ -1131,16 +1175,16 @@
                             <h4 className="font-medium text-slate-700">Sekretaris Kombel</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Nama Sekretaris</label>
-                                    <input type="text" name="namaSekretaris" value={formData.namaSekretaris} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                    <label className="block text-xs text-slate-500 mb-1">Nama Sekretaris <span className="text-red-500">*</span></label>
+                                    <input type="text" name="namaSekretaris" value={formData.namaSekretaris} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Instansi Sekretaris</label>
-                                    <input type="text" name="instansiSekretaris" value={formData.instansiSekretaris} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                    <label className="block text-xs text-slate-500 mb-1">Instansi Sekretaris <span className="text-red-500">*</span></label>
+                                    <input type="text" name="instansiSekretaris" value={formData.instansiSekretaris} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Sekretaris</label>
-                                    <input type="tel" name="noHpSekretaris" value={formData.noHpSekretaris} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Sekretaris <span className="text-red-500">*</span></label>
+                                    <input type="tel" name="noHpSekretaris" value={formData.noHpSekretaris} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                 </div>
                             </div>
                         </div>
@@ -1149,16 +1193,16 @@
                             <h4 className="font-medium text-slate-700">Bendahara Kombel</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Nama Bendahara</label>
-                                    <input type="text" name="namaBendahara" value={formData.namaBendahara} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                    <label className="block text-xs text-slate-500 mb-1">Nama Bendahara <span className="text-red-500">*</span></label>
+                                    <input type="text" name="namaBendahara" value={formData.namaBendahara} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Instansi Bendahara</label>
-                                    <input type="text" name="instansiBendahara" value={formData.instansiBendahara} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                    <label className="block text-xs text-slate-500 mb-1">Instansi Bendahara <span className="text-red-500">*</span></label>
+                                    <input type="text" name="instansiBendahara" value={formData.instansiBendahara} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Bendahara</label>
-                                    <input type="tel" name="noHpBendahara" value={formData.noHpBendahara} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                    <label className="block text-xs text-slate-500 mb-1">No HP/WA Bendahara <span className="text-red-500">*</span></label>
+                                    <input type="tel" name="noHpBendahara" value={formData.noHpBendahara} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                 </div>
                             </div>
                         </div>
@@ -1169,16 +1213,16 @@
                                     <h4 className="font-medium text-slate-700">Bidang Pendidikan</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Nama</label>
-                                            <input type="text" name="namaPendidikan" value={formData.namaPendidikan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                            <label className="block text-xs text-slate-500 mb-1">Nama <span className="text-red-500">*</span></label>
+                                            <input type="text" name="namaPendidikan" value={formData.namaPendidikan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Instansi</label>
-                                            <input type="text" name="instansiPendidikan" value={formData.instansiPendidikan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                            <label className="block text-xs text-slate-500 mb-1">Instansi <span className="text-red-500">*</span></label>
+                                            <input type="text" name="instansiPendidikan" value={formData.instansiPendidikan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA</label>
-                                            <input type="tel" name="noHpPendidikan" value={formData.noHpPendidikan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA <span className="text-red-500">*</span></label>
+                                            <input type="tel" name="noHpPendidikan" value={formData.noHpPendidikan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                         </div>
                                     </div>
                                 </div>
@@ -1187,16 +1231,16 @@
                                     <h4 className="font-medium text-slate-700">Bidang Perencanaan & Pelaksanaan Program</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Nama</label>
-                                            <input type="text" name="namaPerencanaan" value={formData.namaPerencanaan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                            <label className="block text-xs text-slate-500 mb-1">Nama <span className="text-red-500">*</span></label>
+                                            <input type="text" name="namaPerencanaan" value={formData.namaPerencanaan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Instansi</label>
-                                            <input type="text" name="instansiPerencanaan" value={formData.instansiPerencanaan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                            <label className="block text-xs text-slate-500 mb-1">Instansi <span className="text-red-500">*</span></label>
+                                            <input type="text" name="instansiPerencanaan" value={formData.instansiPerencanaan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA</label>
-                                            <input type="tel" name="noHpPerencanaan" value={formData.noHpPerencanaan} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA <span className="text-red-500">*</span></label>
+                                            <input type="tel" name="noHpPerencanaan" value={formData.noHpPerencanaan} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                         </div>
                                     </div>
                                 </div>
@@ -1205,16 +1249,16 @@
                                     <h4 className="font-medium text-slate-700">Bidang Humas</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Nama</label>
-                                            <input type="text" name="namaHumas" value={formData.namaHumas} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                            <label className="block text-xs text-slate-500 mb-1">Nama <span className="text-red-500">*</span></label>
+                                            <input type="text" name="namaHumas" value={formData.namaHumas} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Instansi</label>
-                                            <input type="text" name="instansiHumas" value={formData.instansiHumas} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                            <label className="block text-xs text-slate-500 mb-1">Instansi <span className="text-red-500">*</span></label>
+                                            <input type="text" name="instansiHumas" value={formData.instansiHumas} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA</label>
-                                            <input type="tel" name="noHpHumas" value={formData.noHpHumas} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA <span className="text-red-500">*</span></label>
+                                            <input type="tel" name="noHpHumas" value={formData.noHpHumas} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                         </div>
                                     </div>
                                 </div>
@@ -1223,16 +1267,16 @@
                                     <h4 className="font-medium text-slate-700">Bidang Dokumentasi / Publikasi</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Nama</label>
-                                            <input type="text" name="namaDokumentasi" value={formData.namaDokumentasi} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
+                                            <label className="block text-xs text-slate-500 mb-1">Nama <span className="text-red-500">*</span></label>
+                                            <input type="text" name="namaDokumentasi" value={formData.namaDokumentasi} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Nama Lengkap" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">Instansi</label>
-                                            <input type="text" name="instansiDokumentasi" value={formData.instansiDokumentasi} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
+                                            <label className="block text-xs text-slate-500 mb-1">Instansi <span className="text-red-500">*</span></label>
+                                            <input type="text" name="instansiDokumentasi" value={formData.instansiDokumentasi} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Asal Instansi" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA</label>
-                                            <input type="tel" name="noHpDokumentasi" value={formData.noHpDokumentasi} onChange={handleInputChange} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
+                                            <label className="block text-xs text-slate-500 mb-1">No HP/WA <span className="text-red-500">*</span></label>
+                                            <input type="tel" name="noHpDokumentasi" value={formData.noHpDokumentasi} onChange={handleInputChange} required className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" placeholder="08..." />
                                         </div>
                                     </div>
                                 </div>
