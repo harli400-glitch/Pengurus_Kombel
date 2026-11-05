@@ -27,8 +27,7 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
         import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, doc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
-        import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-storage.js';
-        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download } from 'https://esm.sh/lucide-react@0.359.0';
+        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download, Edit2, Save } from 'https://esm.sh/lucide-react@0.359.0';
 
         const DATA_KECAMATAN = [
           "Galela", "Galela Barat", "Galela Selatan", "Galela Utara", "Kao", "Kao Barat", 
@@ -99,7 +98,7 @@
         const TOTAL_EXPECTED_KOMBEL = Object.values(NAMA_KOMBEL_MAPPING).reduce((sum, arr) => sum + arr.length, 0); 
         const TOTAL_EXPECTED_PENGURUS = Object.values(TARGET_PENGURUS_KOMBEL).reduce((sum, val) => sum + val, 0); 
 
-        // Konfigurasi Firebase Anda
+        // Konfigurasi Firebase Anda (Firebase Storage telah dihapus)
         const firebaseConfig = {
           apiKey: "AIzaSyB3N4uaAILOTFZG6BoeotXGMxNKfpxf6oo",
           authDomain: "pengurus-kombel.firebaseapp.com",
@@ -110,21 +109,54 @@
           measurementId: "G-G6FZYS8153"
         };
 
+        // --- PASTE URL WEB APP GOOGLE APPS SCRIPT ANDA DI SINI ---
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxMPKXEm8kcC3B2ukba_BVPLEumj_V0xTIyWrwqf8dHL0__6tzayEr_YSkXH14wTCFRmw/exec";
+        // ---------------------------------------------------------
+
         const isLocalMode = firebaseConfig.apiKey === "ISI_API_KEY_ANDA" || !firebaseConfig.apiKey;
 
-        let app, db, auth, storage;
+        let app, db, auth;
         try {
             if (!isLocalMode) {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                storage = getStorage(app);
             }
         } catch (e) {
             console.error("Gagal menginisialisasi Firebase. Pastikan konfigurasi valid:", e);
         }
 
         const appId = 'kombel-app';
+
+        // Fungsi Helper untuk mengubah file menjadi teks Base64
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]); 
+            reader.onerror = error => reject(error);
+        });
+
+        // Fungsi utama untuk mengunggah ke Google Apps Script (Drive)
+        const uploadFileToDrive = async (file) => {
+            const base64Data = await fileToBase64(file);
+            const payload = {
+                base64: base64Data,
+                type: file.type,
+                name: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`
+            };
+
+            const response = await fetch(GAS_WEB_APP_URL, {
+                method: "POST",
+                body: JSON.stringify(payload),
+                headers: { "Content-Type": "text/plain;charset=utf-8" }
+            });
+
+            const result = await response.json();
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            return result.url;
+        };
 
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
@@ -137,8 +169,13 @@
 
           const [searchFilters, setSearchFilters] = useState({ kecamatan: '', jenisPengurus: '', namaKombel: '', statusSK: '' });
           const [detailModal, setDetailModal] = useState(null);
+          const [isEditingDetail, setIsEditingDetail] = useState(false);
+          const [editFormData, setEditFormData] = useState({});
+          const [editSkFile, setEditSkFile] = useState(null);
+          const [savingEdit, setSavingEdit] = useState(false);
           const [uploadModal, setUploadModal] = useState(null);
           const [newSkFile, setNewSkFile] = useState(null);
+          const [editTargets, setEditTargets] = useState([]); // State baru untuk target edit (array untuk checklist)
 
           const [formData, setFormData] = useState({
             kecamatan: '', jenisKombel: '', jenisPengurus: '', namaKombel: '',
@@ -274,6 +311,76 @@
             }
           };
 
+          const handleEditModal = (item) => {
+              setDetailModal(item);
+              setEditFormData(item);
+              setIsEditingDetail(false);
+              setEditSkFile(null);
+              setEditTargets([]); // Reset checklist target setiap buka modal
+          };
+
+          const handleEditInputChange = (e) => {
+              const { name, value } = e.target;
+              setEditFormData(prev => ({ ...prev, [name]: value }));
+          };
+
+          const handleEditFileChange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                 if (file.type !== 'application/pdf') {
+                    alert('Hanya file PDF yang diizinkan.');
+                    e.target.value = null;
+                    setEditSkFile(null);
+                    return;
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                    alert('Peringatan: Ukuran file melebihi 2 MB.');
+                    e.target.value = null;
+                    setEditSkFile(null);
+                    return;
+                }
+                setEditSkFile(file);
+            } else {
+                setEditSkFile(null);
+            }
+          };
+
+          const handleSaveEdit = async () => {
+            setSavingEdit(true);
+            try {
+                let updatedLinkSK = editFormData.linkSK;
+                
+                if (editSkFile) {
+                    if (isLocalMode) {
+                        updatedLinkSK = URL.createObjectURL(editSkFile);
+                    } else {
+                        updatedLinkSK = await uploadFileToDrive(editSkFile);
+                    }
+                }
+
+                const dataToSave = { ...editFormData, linkSK: updatedLinkSK, statusSK: updatedLinkSK ? 'sudah' : 'belum' };
+                const idToUpdate = detailModal.id;
+                delete dataToSave.id;
+
+                if (isLocalMode) {
+                    setSubmissions(prev => prev.map(item => item.id === idToUpdate ? { ...item, ...dataToSave } : item));
+                } else {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', idToUpdate);
+                    await updateDoc(docRef, dataToSave);
+                }
+
+                setDetailModal({ ...detailModal, ...dataToSave, id: idToUpdate });
+                setIsEditingDetail(false);
+                setEditSkFile(null);
+                alert("Data pengurus dan SK berhasil diperbarui.");
+            } catch (error) {
+                console.error("Error updating data:", error);
+                alert("Gagal menyimpan perubahan. " + error.message);
+            } finally {
+                setSavingEdit(false);
+            }
+          };
+
           const handleSubmit = async (e) => {
             e.preventDefault();
             setMessage(null);
@@ -294,13 +401,12 @@
             try {
                 let uploadedLinkSK = '';
                 
+                // MENGUNGGAH FILE KE GOOGLE DRIVE MELALUI APPS SCRIPT
                 if (formData.statusSK === 'sudah' && formData.fileSK) {
                     if (isLocalMode) {
                         uploadedLinkSK = URL.createObjectURL(formData.fileSK); // Fake URL mode lokal
                     } else {
-                        const fileRef = ref(storage, `sk_kombel/${Date.now()}_${formData.fileSK.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`);
-                        await uploadBytes(fileRef, formData.fileSK);
-                        uploadedLinkSK = await getDownloadURL(fileRef);
+                        uploadedLinkSK = await uploadFileToDrive(formData.fileSK);
                     }
                 }
 
@@ -321,7 +427,7 @@
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'submissions'), dataToSave);
                 }
 
-                setMessage({ type: 'success', text: 'Data Kombel dan file berhasil disimpan!' });
+                setMessage({ type: 'success', text: 'Data Kombel dan file berhasil disimpan di Google Drive!' });
                 setFormData({
                     kecamatan: '', jenisKombel: '', jenisPengurus: '', namaKombel: '',
                     namaKetua: '', instansiKetua: '', noHpKetua: '',
@@ -342,7 +448,7 @@
 
             } catch (error) {
                 console.error("Error submitting form:", error);
-                setMessage({ type: 'error', text: 'Gagal menyimpan data atau mengunggah file. Silakan coba lagi.' });
+                setMessage({ type: 'error', text: 'Gagal menyimpan data atau mengunggah file. ' + error.message });
             } finally {
                 setSubmitting(false);
             }
@@ -356,12 +462,11 @@
             try {
                 let uploadedLinkSK = '';
                 
+                // MENGUNGGAH FILE KE GOOGLE DRIVE MELALUI APPS SCRIPT
                 if (isLocalMode) {
                     uploadedLinkSK = URL.createObjectURL(newSkFile);
                 } else {
-                    const fileRef = ref(storage, `sk_kombel/${Date.now()}_${newSkFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`);
-                    await uploadBytes(fileRef, newSkFile);
-                    uploadedLinkSK = await getDownloadURL(fileRef);
+                    uploadedLinkSK = await uploadFileToDrive(newSkFile);
                 }
 
                 if (isLocalMode) {
@@ -376,7 +481,7 @@
                 setNewSkFile(null);
             } catch (error) {
                 console.error("Error updating SK:", error);
-                setUploadModal(prev => ({ ...prev, error: "Gagal mengupdate dan mengunggah SK. Coba periksa koneksi atau izin database Anda."}));
+                setUploadModal(prev => ({ ...prev, error: "Gagal mengupdate dan mengunggah SK. " + error.message}));
             } finally {
                 setUploadingModal(false);
             }
@@ -585,7 +690,7 @@
                                                                 <Upload className="w-4 h-4" />
                                                             </button>
                                                         )}
-                                                        <button onClick={() => setDetailModal(item)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md" title="Lihat Detail">
+                                                        <button onClick={() => handleEditModal(item)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md" title="Lihat Detail / Edit">
                                                             <Eye className="w-4 h-4" />
                                                         </button>
                                                         {/* Tombol Hapus dengan Proteksi Password "siska" */}
@@ -625,7 +730,7 @@
                                         className="w-full rounded-lg border border-slate-300 py-2 px-3 text-sm mb-4 focus:outline-none focus:border-indigo-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" 
                                     />
                                     <button type="submit" disabled={uploadingModal} className="w-full bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-70 flex justify-center items-center gap-2">
-                                        {uploadingModal ? 'Mengunggah File...' : 'Simpan SK'}
+                                        {uploadingModal ? 'Mengunggah ke Drive...' : 'Simpan SK'}
                                     </button>
                                 </form>
                             </div>
@@ -634,56 +739,193 @@
 
                     {detailModal && (
                         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-fadeIn">
-                                <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-slate-100 z-10">
-                                    <h3 className="font-semibold text-slate-800">Detail Kombel</h3>
-                                    <button onClick={() => setDetailModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                            <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col animate-fadeIn">
+                                <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-slate-100 z-10 rounded-t-xl shrink-0">
+                                    <h3 className="font-semibold text-slate-800">
+                                        {isEditingDetail ? 'Edit Detail Pengurus & SK' : 'Detail Kombel'}
+                                    </h3>
+                                    <div className="flex gap-2 items-center">
+                                        <button onClick={() => setDetailModal(null)} className="text-slate-400 hover:text-slate-600 p-1.5 ml-2"><X className="w-5 h-5"/></button>
+                                    </div>
                                 </div>
-                                <div className="p-6 space-y-6">
-                                    <div>
-                                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Informasi Umum</h4>
-                                        <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg">
-                                            <div><p className="text-slate-500 text-xs">Nama Kombel</p><p className="font-medium">{detailModal.namaKombel}</p></div>
-                                            <div><p className="text-slate-500 text-xs">Kecamatan</p><p className="font-medium">{detailModal.kecamatan}</p></div>
-                                            <div><p className="text-slate-500 text-xs">Jenis Kombel</p><p className="font-medium">{detailModal.jenisKombel}</p></div>
-                                            <div><p className="text-slate-500 text-xs">Jenis Pengurus</p><p className="font-medium">{detailModal.jenisPengurus}</p></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div>
-                                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Susunan Pengurus Inti</h4>
-                                        <div className="space-y-3 text-sm">
-                                            <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Ketua</div><div className="w-2/3 font-medium">{detailModal.namaKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiKetua || '-'})</span></div></div>
-                                            {detailModal.namaWakilKetua && (
-                                                <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Wakil Ketua</div><div className="w-2/3 font-medium">{detailModal.namaWakilKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiWakilKetua || '-'})</span></div></div>
-                                            )}
-                                            <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Sekretaris</div><div className="w-2/3 font-medium">{detailModal.namaSekretaris || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiSekretaris || '-'})</span></div></div>
-                                            <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Bendahara</div><div className="w-2/3 font-medium">{detailModal.namaBendahara || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiBendahara || '-'})</span></div></div>
-                                        </div>
-                                    </div>
-
-                                    {(detailModal.namaPendidikan || detailModal.namaPerencanaan || detailModal.namaHumas || detailModal.namaDokumentasi) && (
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bidang-Bidang</h4>
-                                            <div className="space-y-3 text-sm">
-                                                {detailModal.namaPendidikan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Pendidikan</div><div className="w-2/3 font-medium">{detailModal.namaPendidikan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPendidikan})</span></div></div>}
-                                                {detailModal.namaPerencanaan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Perencanaan</div><div className="w-2/3 font-medium">{detailModal.namaPerencanaan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPerencanaan})</span></div></div>}
-                                                {detailModal.namaHumas && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Humas</div><div className="w-2/3 font-medium">{detailModal.namaHumas} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiHumas})</span></div></div>}
-                                                {detailModal.namaDokumentasi && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Dokumentasi</div><div className="w-2/3 font-medium">{detailModal.namaDokumentasi} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiDokumentasi})</span></div></div>}
+                                <div className="p-6 space-y-6 overflow-y-auto">
+                                    {!isEditingDetail ? (
+                                        <>
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Informasi Umum</h4>
+                                                <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg">
+                                                    <div><p className="text-slate-500 text-xs">Nama Kombel</p><p className="font-medium">{detailModal.namaKombel}</p></div>
+                                                    <div><p className="text-slate-500 text-xs">Kecamatan</p><p className="font-medium">{detailModal.kecamatan}</p></div>
+                                                    <div><p className="text-slate-500 text-xs">Jenis Kombel</p><p className="font-medium">{detailModal.jenisKombel}</p></div>
+                                                    <div><p className="text-slate-500 text-xs">Jenis Pengurus</p><p className="font-medium">{detailModal.jenisPengurus}</p></div>
+                                                </div>
                                             </div>
+                                            
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Susunan Pengurus Inti</h4>
+                                                <div className="space-y-3 text-sm">
+                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Ketua</div><div className="w-2/3 font-medium">{detailModal.namaKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiKetua || '-'})</span></div></div>
+                                                    {detailModal.namaWakilKetua && (
+                                                        <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Wakil Ketua</div><div className="w-2/3 font-medium">{detailModal.namaWakilKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiWakilKetua || '-'})</span></div></div>
+                                                    )}
+                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Sekretaris</div><div className="w-2/3 font-medium">{detailModal.namaSekretaris || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiSekretaris || '-'})</span></div></div>
+                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Bendahara</div><div className="w-2/3 font-medium">{detailModal.namaBendahara || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiBendahara || '-'})</span></div></div>
+                                                </div>
+                                            </div>
+
+                                            {(detailModal.namaPendidikan || detailModal.namaPerencanaan || detailModal.namaHumas || detailModal.namaDokumentasi) && (
+                                                <div>
+                                                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bidang-Bidang</h4>
+                                                    <div className="space-y-3 text-sm">
+                                                        {detailModal.namaPendidikan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Pendidikan</div><div className="w-2/3 font-medium">{detailModal.namaPendidikan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPendidikan})</span></div></div>}
+                                                        {detailModal.namaPerencanaan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Perencanaan</div><div className="w-2/3 font-medium">{detailModal.namaPerencanaan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPerencanaan})</span></div></div>}
+                                                        {detailModal.namaHumas && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Humas</div><div className="w-2/3 font-medium">{detailModal.namaHumas} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiHumas})</span></div></div>}
+                                                        {detailModal.namaDokumentasi && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Dokumentasi</div><div className="w-2/3 font-medium">{detailModal.namaDokumentasi} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiDokumentasi})</span></div></div>}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Dokumen SK</h4>
+                                                {detailModal.linkSK ? (
+                                                    <a href={detailModal.linkSK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">
+                                                        <Eye className="w-4 h-4" /> Lihat SK
+                                                    </a>
+                                                ) : (
+                                                    <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-500 italic">SK Belum Diunggah</div>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
+                                                <label className="block text-sm font-medium text-indigo-900 mb-3">Pilih poin data yang ingin Anda ubah (bisa lebih dari satu):</label>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input type="checkbox" checked={editTargets.includes('Ketua')} onChange={() => setEditTargets(prev => prev.includes('Ketua') ? prev.filter(t => t !== 'Ketua') : [...prev, 'Ketua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                        Ketua
+                                                    </label>
+                                                    {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
+                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                            <input type="checkbox" checked={editTargets.includes('WakilKetua')} onChange={() => setEditTargets(prev => prev.includes('WakilKetua') ? prev.filter(t => t !== 'WakilKetua') : [...prev, 'WakilKetua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                            Wakil Ketua
+                                                        </label>
+                                                    )}
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input type="checkbox" checked={editTargets.includes('Sekretaris')} onChange={() => setEditTargets(prev => prev.includes('Sekretaris') ? prev.filter(t => t !== 'Sekretaris') : [...prev, 'Sekretaris'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                        Sekretaris
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input type="checkbox" checked={editTargets.includes('Bendahara')} onChange={() => setEditTargets(prev => prev.includes('Bendahara') ? prev.filter(t => t !== 'Bendahara') : [...prev, 'Bendahara'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                        Bendahara
+                                                    </label>
+                                                    {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
+                                                        <>
+                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                                <input type="checkbox" checked={editTargets.includes('Pendidikan')} onChange={() => setEditTargets(prev => prev.includes('Pendidikan') ? prev.filter(t => t !== 'Pendidikan') : [...prev, 'Pendidikan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                                Bidang Pendidikan
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                                <input type="checkbox" checked={editTargets.includes('Perencanaan')} onChange={() => setEditTargets(prev => prev.includes('Perencanaan') ? prev.filter(t => t !== 'Perencanaan') : [...prev, 'Perencanaan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                                Bidang Perencanaan
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                                <input type="checkbox" checked={editTargets.includes('Humas')} onChange={() => setEditTargets(prev => prev.includes('Humas') ? prev.filter(t => t !== 'Humas') : [...prev, 'Humas'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                                Bidang Humas
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                                <input type="checkbox" checked={editTargets.includes('Dokumentasi')} onChange={() => setEditTargets(prev => prev.includes('Dokumentasi') ? prev.filter(t => t !== 'Dokumentasi') : [...prev, 'Dokumentasi'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                                Bidang Dokumentasi
+                                                            </label>
+                                                        </>
+                                                    )}
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input type="checkbox" checked={editTargets.includes('SK')} onChange={() => setEditTargets(prev => prev.includes('SK') ? prev.filter(t => t !== 'SK') : [...prev, 'SK'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                        Dokumen SK Kombel
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            {editTargets.length === 0 && (
+                                                <div className="p-8 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
+                                                    Silakan centang data yang ingin diubah pada kotak pilihan di atas.
+                                                </div>
+                                            )}
+
+                                            {editTargets.filter(t => t !== 'SK').map(target => (
+                                                <div key={target} className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+                                                    <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">
+                                                        Ubah Data {
+                                                            target === 'Ketua' ? 'Ketua' :
+                                                            target === 'WakilKetua' ? 'Wakil Ketua' :
+                                                            target === 'Sekretaris' ? 'Sekretaris' :
+                                                            target === 'Bendahara' ? 'Bendahara' :
+                                                            `Bidang ${target}`
+                                                        }
+                                                    </h4>
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-slate-600 mb-1">Nama</label>
+                                                            <input type="text" name={`nama${target}`} value={editFormData[`nama${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-slate-600 mb-1">Instansi</label>
+                                                            <input type="text" name={`instansi${target}`} value={editFormData[`instansi${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-slate-600 mb-1">No HP/WA</label>
+                                                            <input type="tel" name={`noHp${target}`} value={editFormData[`noHp${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+
+                                            {editTargets.includes('SK') && (
+                                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+                                                    <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">Ubah Dokumen SK</h4>
+                                                    <p className="text-xs text-slate-600 mb-3 leading-relaxed">Pilih file PDF SK baru untuk menggantikan file lama. File lama akan ditimpa dengan file yang baru Anda unggah. Biarkan jika tidak jadi mengganti.</p>
+                                                    <input 
+                                                        type="file" 
+                                                        accept="application/pdf"
+                                                        onChange={handleEditFileChange} 
+                                                        className="w-full rounded-md border border-slate-300 bg-white py-2 px-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                                                    />
+                                                    {editFormData.linkSK && !editSkFile && (
+                                                        <p className="mt-3 text-xs text-slate-500 font-medium flex items-center gap-1"><CheckCircle className="w-4 h-4 text-emerald-500" /> SK lama saat ini aman dan belum tergantikan.</p>
+                                                    )}
+                                                    {editSkFile && (
+                                                        <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+                                                            <p className="text-xs text-indigo-800 font-medium flex items-start gap-2">
+                                                                <UploadCloud className="w-4 h-4 shrink-0 mt-0.5" /> 
+                                                                <span>File <b>{editSkFile.name}</b> akan diunggah dan menimpa SK lama saat Anda menyimpan perubahan.</span>
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            
+                                            {editTargets.length > 0 && (
+                                                <p className="text-xs text-amber-600 mt-4 bg-amber-50 p-2 rounded-md border border-amber-100 flex gap-1 items-start">
+                                                    <AlertCircle className="w-4 h-4 shrink-0"/> Saat Anda mengklik "Simpan Perubahan", data-data ini akan menimpa data lama.
+                                                </p>
+                                            )}
                                         </div>
                                     )}
-
-                                    <div>
-                                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Dokumen SK</h4>
-                                        {detailModal.linkSK ? (
-                                            <a href={detailModal.linkSK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">
-                                                <Eye className="w-4 h-4" /> Buka Dokumen PDF SK
-                                            </a>
-                                        ) : (
-                                            <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-500 italic">SK Belum Diunggah</div>
-                                        )}
-                                    </div>
+                                </div>
+                                
+                                <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-3 rounded-b-xl z-10 shrink-0">
+                                    {!isEditingDetail ? (
+                                        <button onClick={() => setIsEditingDetail(true)} className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
+                                            <Edit2 className="w-4 h-4"/> Edit Data
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button onClick={() => { setIsEditingDetail(false); setEditTargets([]); }} disabled={savingEdit} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Batal</button>
+                                            <button onClick={handleSaveEdit} disabled={savingEdit || editTargets.length === 0} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg flex items-center gap-2 transition-colors">
+                                                {savingEdit ? 'Menyimpan...' : <><Save className="w-4 h-4"/> Simpan Perubahan</>}
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1075,7 +1317,7 @@
                             type="submit" disabled={submitting}
                             className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
-                            {submitting ? 'Menyimpan & Mengunggah File...' : 'Kirim Data'}
+                            {submitting ? 'Menyimpan & Mengunggah File ke Google Drive...' : 'Kirim Data'}
                         </button>
                     </div>
                 </form>
