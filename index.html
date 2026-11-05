@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SiData Kombel - Sistem Pendataan Komunitas Belajar</title>
+    <title>PENA HALUT_Pengurus Kombel - Sistem Pendataan Pengurus Komunitas Belajar</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,7 +27,7 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
         import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, doc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
-        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download, Edit2, Save } from 'https://esm.sh/lucide-react@0.359.0';
+        import { BarChart, Users, FileText, CheckCircle, UploadCloud, Activity, LayoutDashboard, PlusCircle, AlertCircle, Search, Eye, Upload, X, Database, Briefcase, Trash2, Download, Edit2, Save, Bell, Lock, Unlock, FileX, MessageSquare, MessageCircle } from 'https://esm.sh/lucide-react@0.359.0';
 
         const DATA_KECAMATAN = [
           "Galela", "Galela Barat", "Galela Selatan", "Galela Utara", "Kao", "Kao Barat", 
@@ -160,12 +160,16 @@
 
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
+          const [isAdmin, setIsAdmin] = useState(false); // State untuk Admin
           const [submissions, setSubmissions] = useState([]);
           const [loading, setLoading] = useState(true);
           const [submitting, setSubmitting] = useState(false);
           const [uploadingModal, setUploadingModal] = useState(false);
           const [message, setMessage] = useState(null); 
           const [isReady, setIsReady] = useState(false);
+          
+          // State untuk Banner Pesan SK yang Belum Diupload
+          const [showMissingSkMessage, setShowMissingSkMessage] = useState(true);
 
           const [searchFilters, setSearchFilters] = useState({ kecamatan: '', jenisPengurus: '', namaKombel: '', statusSK: '' });
           const [detailModal, setDetailModal] = useState(null);
@@ -175,7 +179,8 @@
           const [savingEdit, setSavingEdit] = useState(false);
           const [uploadModal, setUploadModal] = useState(null);
           const [newSkFile, setNewSkFile] = useState(null);
-          const [editTargets, setEditTargets] = useState([]); // State baru untuk target edit (array untuk checklist)
+          const [editTargets, setEditTargets] = useState([]);
+          const [adminVerifyModal, setAdminVerifyModal] = useState(null); // Modal Verifikasi Spesifik Admin
 
           const [formData, setFormData] = useState({
             kecamatan: '', jenisKombel: '', jenisPengurus: '', namaKombel: '',
@@ -260,6 +265,14 @@
             return () => unsubscribeAuth && unsubscribeAuth();
           }, [isReady]);
 
+          // Menyaring data kombel yang belum mengunggah SK atau Perlu Perbaikan
+          const actionRequiredData = useMemo(() => {
+              return submissions.filter(s => 
+                  (!s.linkSK || s.statusSK === 'belum') || 
+                  (s.statusVerifikasi === 'perlu_perbaikan')
+              );
+          }, [submissions]);
+
           const handleInputChange = (e) => {
             const { name, value } = e.target;
             setFormData(prev => {
@@ -316,12 +329,16 @@
               setEditFormData(item);
               setIsEditingDetail(false);
               setEditSkFile(null);
-              setEditTargets([]); // Reset checklist target setiap buka modal
+              setEditTargets([]);
           };
 
           const handleEditInputChange = (e) => {
               const { name, value } = e.target;
-              setEditFormData(prev => ({ ...prev, [name]: value }));
+              setEditFormData(prev => {
+                  const newData = { ...prev, [name]: value };
+                  if (name === 'jenisKombel') newData.namaKombel = ''; // Reset nama kombel jika jenis kombel diubah
+                  return newData;
+              });
           };
 
           const handleEditFileChange = (e) => {
@@ -358,7 +375,13 @@
                     }
                 }
 
-                const dataToSave = { ...editFormData, linkSK: updatedLinkSK, statusSK: updatedLinkSK ? 'sudah' : 'belum' };
+                const dataToSave = { 
+                    ...editFormData, 
+                    linkSK: updatedLinkSK, 
+                    statusSK: updatedLinkSK ? 'sudah' : 'belum',
+                    statusVerifikasi: 'direvisi',
+                    pesanPerbaikan: ''
+                };
                 const idToUpdate = detailModal.id;
                 delete dataToSave.id;
 
@@ -401,17 +424,16 @@
             try {
                 let uploadedLinkSK = '';
                 
-                // MENGUNGGAH FILE KE GOOGLE DRIVE MELALUI APPS SCRIPT
                 if (formData.statusSK === 'sudah' && formData.fileSK) {
                     if (isLocalMode) {
-                        uploadedLinkSK = URL.createObjectURL(formData.fileSK); // Fake URL mode lokal
+                        uploadedLinkSK = URL.createObjectURL(formData.fileSK); 
                     } else {
                         uploadedLinkSK = await uploadFileToDrive(formData.fileSK);
                     }
                 }
 
                 const dataToSave = { ...formData, timestamp: isLocalMode ? new Date() : serverTimestamp() };
-                delete dataToSave.fileSK; // Hapus objek file dari payload firestore
+                delete dataToSave.fileSK; 
 
                 if (formData.statusSK === 'belum') {
                     dataToSave.linkSK = ''; 
@@ -441,7 +463,6 @@
                     statusSK: 'sudah', linkSK: '', fileSK: null
                 });
                 
-                // Reset input file (trickily, dengan menggunakan uncontrolled input, kita membiarkan re-render components)
                 document.querySelectorAll('input[type="file"]').forEach(el => el.value = '');
 
                 setTimeout(() => setActiveTab('data'), 2000);
@@ -462,7 +483,6 @@
             try {
                 let uploadedLinkSK = '';
                 
-                // MENGUNGGAH FILE KE GOOGLE DRIVE MELALUI APPS SCRIPT
                 if (isLocalMode) {
                     uploadedLinkSK = URL.createObjectURL(newSkFile);
                 } else {
@@ -471,11 +491,11 @@
 
                 if (isLocalMode) {
                     setSubmissions(prev => prev.map(item => 
-                        item.id === uploadModal.id ? { ...item, linkSK: uploadedLinkSK, statusSK: 'sudah' } : item
+                        item.id === uploadModal.id ? { ...item, linkSK: uploadedLinkSK, statusSK: 'sudah', statusVerifikasi: 'direvisi', pesanPerbaikan: '', targetPerbaikan: [] } : item
                     ));
                 } else {
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', uploadModal.id);
-                    await updateDoc(docRef, { linkSK: uploadedLinkSK, statusSK: 'sudah' });
+                    await updateDoc(docRef, { linkSK: uploadedLinkSK, statusSK: 'sudah', statusVerifikasi: 'direvisi', pesanPerbaikan: '', targetPerbaikan: [] });
                 }
                 setUploadModal(null);
                 setNewSkFile(null);
@@ -487,14 +507,108 @@
             }
           };
 
-          // FUNGSI MENGHAPUS DATA DENGAN PASSWORD "siska"
-          const handleDelete = async (id, namaKombel) => {
-            const inputPassword = window.prompt(`Masukkan password untuk menghapus data "${namaKombel}":`);
-            
-            if (inputPassword === null) return; // Pengguna menekan tombol Batal
+          // FUNGSI MENGIRIM PESAN WHATSAPP
+          const handleKirimWA = (item, targets, catatan) => {
+              const phone = item.noHpKetua || item.noHpSekretaris || item.noHpBendahara;
+              
+              if (!phone) {
+                  alert(`Gagal mengirim WA. Tidak ada nomor HP pengurus yang terdaftar untuk ${item.namaKombel}.`);
+                  return;
+              }
 
-            if (inputPassword !== "siska") {
-                alert("Password salah! Data tidak dapat dihapus.");
+              let formattedPhone = phone.replace(/\D/g, ''); // Hanya ambil angka
+              if (formattedPhone.startsWith('0')) {
+                  formattedPhone = '62' + formattedPhone.substring(1);
+              }
+
+              const targetText = targets.map(t => {
+                  if (t === 'info_umum') return 'Informasi Umum Kombel';
+                  if (t === 'pengurus_kombel') return 'Data Pengurus Kombel';
+                  if (t === 'sk_kombel') return 'Dokumen SK Kombel';
+                  return t;
+              }).join(', ');
+
+              const message = `Halo Pengurus Kombel *${item.namaKombel}*,\n\nMohon maaf, ada data di *PENA HALUT* yang perlu diperbaiki.\n\n*Bagian yang harus diperbaiki:*\n${targetText}\n\n*Catatan Admin:*\n${catatan || 'Mohon cek kembali dan lengkapi data Anda.'}\n\nSilakan buka kembali aplikasi Pengurus Kombel pada link di bawah ini:\n\nhttps://harli400-glitch.github.io/Pengurus_Kombel/\n\nCari nama kombel anda pada layar utama dan lakukan perbaikan pada menu yang muncul di layar utama.\n\nTerima kasih.`;
+
+              const encodedMessage = encodeURIComponent(message);
+              window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
+          };
+
+          // FUNGSI PROSES VERIFIKASI SELESAI OLEH ADMIN
+          const handleProcessCorrectionRequest = async (e) => {
+            e.preventDefault();
+            if (!adminVerifyModal) return;
+
+            const { id, targets, pesan } = adminVerifyModal;
+
+            if (!targets || targets.length === 0) {
+                alert("Silakan pilih minimal satu bagian yang harus diperbaiki!");
+                return;
+            }
+
+            try {
+                const updatePayload = {
+                    statusVerifikasi: 'perlu_perbaikan',
+                    pesanPerbaikan: pesan || 'Mohon lakukan perbaikan data.',
+                    targetPerbaikan: targets
+                };
+
+                if (isLocalMode) {
+                    setSubmissions(prev => prev.map(item => 
+                        item.id === id ? { ...item, ...updatePayload } : item
+                    ));
+                } else {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', id);
+                    await updateDoc(docRef, updatePayload);
+                }
+                
+                alert("Permintaan perbaikan terarah berhasil dikirim ke responden.");
+                
+                const konfirmasiWA = window.confirm("Apakah Anda ingin langsung mengirimkan catatan perbaikan ini ke WhatsApp Pengurus Kombel?");
+                if (konfirmasiWA) {
+                    const fullItem = submissions.find(s => s.id === id);
+                    if (fullItem) {
+                        handleKirimWA(fullItem, targets, pesan);
+                    }
+                }
+
+                setAdminVerifyModal(null);
+            } catch (error) {
+                console.error("Error requesting correction:", error);
+                alert("Gagal mengirim permintaan perbaikan.");
+            }
+          };
+
+          // MEMBUKA FITUR EDIT OTOMATIS SESUAI REKOMENDASI ADMIN
+          const handleOpenEditFromPopup = (item) => {
+              setDetailModal(item);
+              setEditFormData(item);
+              setIsEditingDetail(true);
+              setEditSkFile(null);
+              
+              // Map target perbaikan dari admin ke target checkbox di modal edit
+              let autoTargets = [];
+              if (item.targetPerbaikan && item.targetPerbaikan.length > 0) {
+                  item.targetPerbaikan.forEach(target => {
+                      if (target === 'info_umum') autoTargets.push('InformasiUmum');
+                      if (target === 'sk_kombel') autoTargets.push('SK');
+                      if (target === 'pengurus_kombel') {
+                          autoTargets.push('Ketua', 'Sekretaris', 'Bendahara');
+                          if (item.jenisKombel === "Antar Sekolah SD" || item.jenisKombel === "Antar Sekolah SMP") {
+                              autoTargets.push('WakilKetua', 'Pendidikan', 'Perencanaan', 'Humas', 'Dokumentasi');
+                          }
+                      }
+                  });
+              } else {
+                  autoTargets = ['InformasiUmum', 'Ketua', 'Sekretaris', 'Bendahara', 'SK'];
+              }
+
+              setEditTargets([...new Set(autoTargets)]);
+          };
+
+          const handleDelete = async (id, namaKombel) => {
+            if (!isAdmin) {
+                alert("Hanya admin yang dapat menghapus data.");
                 return;
             }
 
@@ -515,7 +629,6 @@
             }
           };
 
-          // FUNGSI DOWNLOAD EXCEL
           const handleDownloadExcel = (dataToExport) => {
             if (!dataToExport || dataToExport.length === 0) {
                 alert("Tidak ada data untuk diunduh!");
@@ -618,14 +731,36 @@
                                 <Database className="w-5 h-5 text-indigo-500" />
                                 Data Hasil Isian Responden
                             </h2>
-                            {/* Tombol Download Excel */}
-                            <button 
-                                onClick={() => handleDownloadExcel(filteredData)}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
-                            >
-                                <Download className="w-4 h-4" />
-                                Download Excel
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {!isAdmin ? (
+                                    <button 
+                                        onClick={() => {
+                                            const pwd = window.prompt("Masukkan password Admin:");
+                                            if (pwd === "siska") setIsAdmin(true);
+                                            else if (pwd !== null) alert("Password salah!");
+                                        }}
+                                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+                                    >
+                                        <Lock className="w-4 h-4" /> Login Admin
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button 
+                                            onClick={() => setIsAdmin(false)}
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+                                        >
+                                            <Unlock className="w-4 h-4" /> Logout Admin
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDownloadExcel(filteredData)}
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download Excel
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -663,7 +798,7 @@
                                         <th className="px-4 py-3 font-medium">Jenis Pengurus</th>
                                         <th className="px-4 py-3 font-medium">Nama Kombel</th>
                                         <th className="px-4 py-3 font-medium text-center">SK</th>
-                                        <th className="px-4 py-3 font-medium text-center">Upload SK / Detail / Hapus</th>
+                                        <th className="px-4 py-3 font-medium text-center">Upload / Detail {isAdmin && '/ Admin'}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -693,10 +828,25 @@
                                                         <button onClick={() => handleEditModal(item)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md" title="Lihat Detail / Edit">
                                                             <Eye className="w-4 h-4" />
                                                         </button>
-                                                        {/* Tombol Hapus dengan Proteksi Password "siska" */}
-                                                        <button onClick={() => handleDelete(item.id, item.namaKombel)} className="p-1.5 text-red-600 hover:bg-red-100 rounded-md" title="Hapus Data">
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <>
+                                                                <button onClick={() => setAdminVerifyModal({ id: item.id, namaKombel: item.namaKombel, targets: ['sk_kombel'], pesan: '' })} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-md" title="Verifikasi & Minta Perbaikan">
+                                                                    <AlertCircle className="w-4 h-4" />
+                                                                </button>
+                                                                {item.statusVerifikasi === 'perlu_perbaikan' && (
+                                                                    <button 
+                                                                        onClick={() => handleKirimWA(item, item.targetPerbaikan || [], item.pesanPerbaikan)} 
+                                                                        className="p-1.5 text-green-600 hover:bg-green-100 rounded-md" 
+                                                                        title="Kirim Catatan via WA"
+                                                                    >
+                                                                        <MessageCircle className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                                <button onClick={() => handleDelete(item.id, item.namaKombel)} className="p-1.5 text-red-600 hover:bg-red-100 rounded-md" title="Hapus Data">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -706,230 +856,6 @@
                             </table>
                         </div>
                     </div>
-
-                    {uploadModal && (
-                        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden animate-fadeIn">
-                                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                                    <h3 className="font-semibold text-slate-800">Upload File PDF SK</h3>
-                                    <button onClick={() => setUploadModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
-                                </div>
-                                <form onSubmit={handleUpdateSK} className="p-6">
-                                    {uploadModal.error && (
-                                        <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 flex items-start gap-2">
-                                            <AlertCircle className="w-5 h-5 shrink-0" />
-                                            <p>{uploadModal.error}</p>
-                                        </div>
-                                    )}
-                                    <p className="text-sm text-slate-600 mb-4">Unggah file dokumen SK (wajib PDF, maks 2 MB) untuk <b>{uploadModal.namaKombel}</b>.</p>
-                                    <input 
-                                        type="file" 
-                                        accept="application/pdf"
-                                        required 
-                                        onChange={handleModalFileChange} 
-                                        className="w-full rounded-lg border border-slate-300 py-2 px-3 text-sm mb-4 focus:outline-none focus:border-indigo-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" 
-                                    />
-                                    <button type="submit" disabled={uploadingModal} className="w-full bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-70 flex justify-center items-center gap-2">
-                                        {uploadingModal ? 'Mengunggah ke Drive...' : 'Simpan SK'}
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {detailModal && (
-                        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col animate-fadeIn">
-                                <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-slate-100 z-10 rounded-t-xl shrink-0">
-                                    <h3 className="font-semibold text-slate-800">
-                                        {isEditingDetail ? 'Edit Detail Pengurus & SK' : 'Detail Kombel'}
-                                    </h3>
-                                    <div className="flex gap-2 items-center">
-                                        <button onClick={() => setDetailModal(null)} className="text-slate-400 hover:text-slate-600 p-1.5 ml-2"><X className="w-5 h-5"/></button>
-                                    </div>
-                                </div>
-                                <div className="p-6 space-y-6 overflow-y-auto">
-                                    {!isEditingDetail ? (
-                                        <>
-                                            <div>
-                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Informasi Umum</h4>
-                                                <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg">
-                                                    <div><p className="text-slate-500 text-xs">Nama Kombel</p><p className="font-medium">{detailModal.namaKombel}</p></div>
-                                                    <div><p className="text-slate-500 text-xs">Kecamatan</p><p className="font-medium">{detailModal.kecamatan}</p></div>
-                                                    <div><p className="text-slate-500 text-xs">Jenis Kombel</p><p className="font-medium">{detailModal.jenisKombel}</p></div>
-                                                    <div><p className="text-slate-500 text-xs">Jenis Pengurus</p><p className="font-medium">{detailModal.jenisPengurus}</p></div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div>
-                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Susunan Pengurus Inti</h4>
-                                                <div className="space-y-3 text-sm">
-                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Ketua</div><div className="w-2/3 font-medium">{detailModal.namaKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiKetua || '-'})</span></div></div>
-                                                    {detailModal.namaWakilKetua && (
-                                                        <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Wakil Ketua</div><div className="w-2/3 font-medium">{detailModal.namaWakilKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiWakilKetua || '-'})</span></div></div>
-                                                    )}
-                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Sekretaris</div><div className="w-2/3 font-medium">{detailModal.namaSekretaris || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiSekretaris || '-'})</span></div></div>
-                                                    <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Bendahara</div><div className="w-2/3 font-medium">{detailModal.namaBendahara || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiBendahara || '-'})</span></div></div>
-                                                </div>
-                                            </div>
-
-                                            {(detailModal.namaPendidikan || detailModal.namaPerencanaan || detailModal.namaHumas || detailModal.namaDokumentasi) && (
-                                                <div>
-                                                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bidang-Bidang</h4>
-                                                    <div className="space-y-3 text-sm">
-                                                        {detailModal.namaPendidikan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Pendidikan</div><div className="w-2/3 font-medium">{detailModal.namaPendidikan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPendidikan})</span></div></div>}
-                                                        {detailModal.namaPerencanaan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Perencanaan</div><div className="w-2/3 font-medium">{detailModal.namaPerencanaan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPerencanaan})</span></div></div>}
-                                                        {detailModal.namaHumas && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Humas</div><div className="w-2/3 font-medium">{detailModal.namaHumas} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiHumas})</span></div></div>}
-                                                        {detailModal.namaDokumentasi && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Dokumentasi</div><div className="w-2/3 font-medium">{detailModal.namaDokumentasi} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiDokumentasi})</span></div></div>}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            <div>
-                                                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Dokumen SK</h4>
-                                                {detailModal.linkSK ? (
-                                                    <a href={detailModal.linkSK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">
-                                                        <Eye className="w-4 h-4" /> Lihat SK
-                                                    </a>
-                                                ) : (
-                                                    <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-500 italic">SK Belum Diunggah</div>
-                                                )}
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="space-y-6">
-                                            <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
-                                                <label className="block text-sm font-medium text-indigo-900 mb-3">Pilih poin data yang ingin Anda ubah (bisa lebih dari satu):</label>
-                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                        <input type="checkbox" checked={editTargets.includes('Ketua')} onChange={() => setEditTargets(prev => prev.includes('Ketua') ? prev.filter(t => t !== 'Ketua') : [...prev, 'Ketua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                        Ketua
-                                                    </label>
-                                                    {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
-                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                            <input type="checkbox" checked={editTargets.includes('WakilKetua')} onChange={() => setEditTargets(prev => prev.includes('WakilKetua') ? prev.filter(t => t !== 'WakilKetua') : [...prev, 'WakilKetua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                            Wakil Ketua
-                                                        </label>
-                                                    )}
-                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                        <input type="checkbox" checked={editTargets.includes('Sekretaris')} onChange={() => setEditTargets(prev => prev.includes('Sekretaris') ? prev.filter(t => t !== 'Sekretaris') : [...prev, 'Sekretaris'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                        Sekretaris
-                                                    </label>
-                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                        <input type="checkbox" checked={editTargets.includes('Bendahara')} onChange={() => setEditTargets(prev => prev.includes('Bendahara') ? prev.filter(t => t !== 'Bendahara') : [...prev, 'Bendahara'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                        Bendahara
-                                                    </label>
-                                                    {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
-                                                        <>
-                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                                <input type="checkbox" checked={editTargets.includes('Pendidikan')} onChange={() => setEditTargets(prev => prev.includes('Pendidikan') ? prev.filter(t => t !== 'Pendidikan') : [...prev, 'Pendidikan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                Bidang Pendidikan
-                                                            </label>
-                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                                <input type="checkbox" checked={editTargets.includes('Perencanaan')} onChange={() => setEditTargets(prev => prev.includes('Perencanaan') ? prev.filter(t => t !== 'Perencanaan') : [...prev, 'Perencanaan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                Bidang Perencanaan
-                                                            </label>
-                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                                <input type="checkbox" checked={editTargets.includes('Humas')} onChange={() => setEditTargets(prev => prev.includes('Humas') ? prev.filter(t => t !== 'Humas') : [...prev, 'Humas'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                Bidang Humas
-                                                            </label>
-                                                            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                                <input type="checkbox" checked={editTargets.includes('Dokumentasi')} onChange={() => setEditTargets(prev => prev.includes('Dokumentasi') ? prev.filter(t => t !== 'Dokumentasi') : [...prev, 'Dokumentasi'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                Bidang Dokumentasi
-                                                            </label>
-                                                        </>
-                                                    )}
-                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                                        <input type="checkbox" checked={editTargets.includes('SK')} onChange={() => setEditTargets(prev => prev.includes('SK') ? prev.filter(t => t !== 'SK') : [...prev, 'SK'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                        Dokumen SK Kombel
-                                                    </label>
-                                                </div>
-                                            </div>
-
-                                            {editTargets.length === 0 && (
-                                                <div className="p-8 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
-                                                    Silakan centang data yang ingin diubah pada kotak pilihan di atas.
-                                                </div>
-                                            )}
-
-                                            {editTargets.filter(t => t !== 'SK').map(target => (
-                                                <div key={target} className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
-                                                    <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">
-                                                        Ubah Data {
-                                                            target === 'Ketua' ? 'Ketua' :
-                                                            target === 'WakilKetua' ? 'Wakil Ketua' :
-                                                            target === 'Sekretaris' ? 'Sekretaris' :
-                                                            target === 'Bendahara' ? 'Bendahara' :
-                                                            `Bidang ${target}`
-                                                        }
-                                                    </h4>
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                        <div>
-                                                            <label className="block text-xs font-medium text-slate-600 mb-1">Nama</label>
-                                                            <input type="text" name={`nama${target}`} value={editFormData[`nama${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-xs font-medium text-slate-600 mb-1">Instansi</label>
-                                                            <input type="text" name={`instansi${target}`} value={editFormData[`instansi${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-xs font-medium text-slate-600 mb-1">No HP/WA</label>
-                                                            <input type="tel" name={`noHp${target}`} value={editFormData[`noHp${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-
-                                            {editTargets.includes('SK') && (
-                                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
-                                                    <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">Ubah Dokumen SK</h4>
-                                                    <p className="text-xs text-slate-600 mb-3 leading-relaxed">Pilih file PDF SK baru untuk menggantikan file lama. File lama akan ditimpa dengan file yang baru Anda unggah. Biarkan jika tidak jadi mengganti.</p>
-                                                    <input 
-                                                        type="file" 
-                                                        accept="application/pdf"
-                                                        onChange={handleEditFileChange} 
-                                                        className="w-full rounded-md border border-slate-300 bg-white py-2 px-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                                                    />
-                                                    {editFormData.linkSK && !editSkFile && (
-                                                        <p className="mt-3 text-xs text-slate-500 font-medium flex items-center gap-1"><CheckCircle className="w-4 h-4 text-emerald-500" /> SK lama saat ini aman dan belum tergantikan.</p>
-                                                    )}
-                                                    {editSkFile && (
-                                                        <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
-                                                            <p className="text-xs text-indigo-800 font-medium flex items-start gap-2">
-                                                                <UploadCloud className="w-4 h-4 shrink-0 mt-0.5" /> 
-                                                                <span>File <b>{editSkFile.name}</b> akan diunggah dan menimpa SK lama saat Anda menyimpan perubahan.</span>
-                                                            </p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            
-                                            {editTargets.length > 0 && (
-                                                <p className="text-xs text-amber-600 mt-4 bg-amber-50 p-2 rounded-md border border-amber-100 flex gap-1 items-start">
-                                                    <AlertCircle className="w-4 h-4 shrink-0"/> Saat Anda mengklik "Simpan Perubahan", data-data ini akan menimpa data lama.
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-3 rounded-b-xl z-10 shrink-0">
-                                    {!isEditingDetail ? (
-                                        <button onClick={() => setIsEditingDetail(true)} className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
-                                            <Edit2 className="w-4 h-4"/> Edit Data
-                                        </button>
-                                    ) : (
-                                        <>
-                                            <button onClick={() => { setIsEditingDetail(false); setEditTargets([]); }} disabled={savingEdit} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Batal</button>
-                                            <button onClick={handleSaveEdit} disabled={savingEdit || editTargets.length === 0} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg flex items-center gap-2 transition-colors">
-                                                {savingEdit ? 'Menyimpan...' : <><Save className="w-4 h-4"/> Simpan Perubahan</>}
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             );
           };
@@ -1044,9 +970,9 @@
               <div className="px-6 py-5 border-b border-slate-100 bg-indigo-50/50">
                 <h2 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
                     <FileText className="w-5 h-5" />
-                    Formulir Pendataan Kombel
+                    Formulir Pendataan Pengurus Kombel
                 </h2>
-                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data komunitas belajar Anda di bawah ini.</p>
+                <p className="text-sm text-indigo-600/80 mt-1">Lengkapi data pengurus komunitas belajar Anda di bawah ini.</p>
               </div>
 
               <div className="p-6">
@@ -1337,20 +1263,374 @@
           }
 
           return (
-            <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+            <div className="min-h-screen bg-slate-50 font-sans text-slate-900 relative">
+              
+              {/* MODAL GLOBAL: DETAIL & EDIT KOMBEL */}
+              {detailModal && (
+                  <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+                      <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col animate-fadeIn">
+                          <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-slate-100 z-10 rounded-t-xl shrink-0">
+                              <h3 className="font-semibold text-slate-800">
+                                  {isEditingDetail ? 'Edit Detail Pengurus & SK' : 'Detail Kombel'}
+                              </h3>
+                              <div className="flex gap-2 items-center">
+                                  <button onClick={() => setDetailModal(null)} className="text-slate-400 hover:text-slate-600 p-1.5 ml-2"><X className="w-5 h-5"/></button>
+                              </div>
+                          </div>
+                          <div className="p-6 space-y-6 overflow-y-auto">
+                              {!isEditingDetail ? (
+                                  <>
+                                      <div>
+                                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Informasi Umum</h4>
+                                          <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg">
+                                              <div><p className="text-slate-500 text-xs">Nama Kombel</p><p className="font-medium">{detailModal.namaKombel}</p></div>
+                                              <div><p className="text-slate-500 text-xs">Kecamatan</p><p className="font-medium">{detailModal.kecamatan}</p></div>
+                                              <div><p className="text-slate-500 text-xs">Jenis Kombel</p><p className="font-medium">{detailModal.jenisKombel}</p></div>
+                                              <div><p className="text-slate-500 text-xs">Jenis Pengurus</p><p className="font-medium">{detailModal.jenisPengurus}</p></div>
+                                          </div>
+                                      </div>
+                                      
+                                      <div>
+                                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Susunan Pengurus Inti</h4>
+                                          <div className="space-y-3 text-sm">
+                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Ketua</div><div className="w-2/3 font-medium">{detailModal.namaKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiKetua || '-'})</span></div></div>
+                                              {detailModal.namaWakilKetua && (
+                                                  <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Wakil Ketua</div><div className="w-2/3 font-medium">{detailModal.namaWakilKetua || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiWakilKetua || '-'})</span></div></div>
+                                              )}
+                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Sekretaris</div><div className="w-2/3 font-medium">{detailModal.namaSekretaris || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiSekretaris || '-'})</span></div></div>
+                                              <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Bendahara</div><div className="w-2/3 font-medium">{detailModal.namaBendahara || '-'} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiBendahara || '-'})</span></div></div>
+                                          </div>
+                                      </div>
+
+                                      {(detailModal.namaPendidikan || detailModal.namaPerencanaan || detailModal.namaHumas || detailModal.namaDokumentasi) && (
+                                          <div>
+                                              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bidang-Bidang</h4>
+                                              <div className="space-y-3 text-sm">
+                                                  {detailModal.namaPendidikan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Pendidikan</div><div className="w-2/3 font-medium">{detailModal.namaPendidikan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPendidikan})</span></div></div>}
+                                                  {detailModal.namaPerencanaan && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Perencanaan</div><div className="w-2/3 font-medium">{detailModal.namaPerencanaan} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiPerencanaan})</span></div></div>}
+                                                  {detailModal.namaHumas && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Humas</div><div className="w-2/3 font-medium">{detailModal.namaHumas} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiHumas})</span></div></div>}
+                                                  {detailModal.namaDokumentasi && <div className="flex border-b border-slate-100 pb-2"><div className="w-1/3 text-slate-500">Dokumentasi</div><div className="w-2/3 font-medium">{detailModal.namaDokumentasi} <span className="text-slate-400 text-xs font-normal">({detailModal.instansiDokumentasi})</span></div></div>}
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      <div>
+                                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Dokumen SK</h4>
+                                          {detailModal.linkSK ? (
+                                              <a href={detailModal.linkSK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">
+                                                  <Eye className="w-4 h-4" /> Lihat SK
+                                              </a>
+                                          ) : (
+                                              <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-500 italic">SK Belum Diunggah</div>
+                                          )}
+                                      </div>
+                                  </>
+                              ) : (
+                                  <div className="space-y-6">
+                                      <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
+                                          <label className="block text-sm font-medium text-indigo-900 mb-3">Pilih poin data yang ingin Anda ubah (bisa lebih dari satu):</label>
+                                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                  <input type="checkbox" checked={editTargets.includes('InformasiUmum')} onChange={() => setEditTargets(prev => prev.includes('InformasiUmum') ? prev.filter(t => t !== 'InformasiUmum') : [...prev, 'InformasiUmum'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                  Informasi Umum Kombel
+                                              </label>
+                                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                  <input type="checkbox" checked={editTargets.includes('Ketua')} onChange={() => setEditTargets(prev => prev.includes('Ketua') ? prev.filter(t => t !== 'Ketua') : [...prev, 'Ketua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                  Ketua
+                                              </label>
+                                              {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
+                                                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                      <input type="checkbox" checked={editTargets.includes('WakilKetua')} onChange={() => setEditTargets(prev => prev.includes('WakilKetua') ? prev.filter(t => t !== 'WakilKetua') : [...prev, 'WakilKetua'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                      Wakil Ketua
+                                                  </label>
+                                              )}
+                                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                  <input type="checkbox" checked={editTargets.includes('Sekretaris')} onChange={() => setEditTargets(prev => prev.includes('Sekretaris') ? prev.filter(t => t !== 'Sekretaris') : [...prev, 'Sekretaris'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                  Sekretaris
+                                              </label>
+                                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                  <input type="checkbox" checked={editTargets.includes('Bendahara')} onChange={() => setEditTargets(prev => prev.includes('Bendahara') ? prev.filter(t => t !== 'Bendahara') : [...prev, 'Bendahara'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                  Bendahara
+                                              </label>
+                                              {(editFormData.jenisKombel === "Antar Sekolah SD" || editFormData.jenisKombel === "Antar Sekolah SMP") && (
+                                                  <>
+                                                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                          <input type="checkbox" checked={editTargets.includes('Pendidikan')} onChange={() => setEditTargets(prev => prev.includes('Pendidikan') ? prev.filter(t => t !== 'Pendidikan') : [...prev, 'Pendidikan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                          Bidang Pendidikan
+                                                      </label>
+                                                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                          <input type="checkbox" checked={editTargets.includes('Perencanaan')} onChange={() => setEditTargets(prev => prev.includes('Perencanaan') ? prev.filter(t => t !== 'Perencanaan') : [...prev, 'Perencanaan'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                          Bidang Perencanaan
+                                                      </label>
+                                                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                          <input type="checkbox" checked={editTargets.includes('Humas')} onChange={() => setEditTargets(prev => prev.includes('Humas') ? prev.filter(t => t !== 'Humas') : [...prev, 'Humas'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                          Bidang Humas
+                                                      </label>
+                                                      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                          <input type="checkbox" checked={editTargets.includes('Dokumentasi')} onChange={() => setEditTargets(prev => prev.includes('Dokumentasi') ? prev.filter(t => t !== 'Dokumentasi') : [...prev, 'Dokumentasi'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                          Bidang Dokumentasi
+                                                      </label>
+                                                  </>
+                                              )}
+                                              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                  <input type="checkbox" checked={editTargets.includes('SK')} onChange={() => setEditTargets(prev => prev.includes('SK') ? prev.filter(t => t !== 'SK') : [...prev, 'SK'])} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                                                  Dokumen SK Kombel
+                                              </label>
+                                          </div>
+                                      </div>
+
+                                      {editTargets.length === 0 && (
+                                          <div className="p-8 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
+                                              Silakan centang data yang ingin diubah pada kotak pilihan di atas.
+                                          </div>
+                                      )}
+
+                                      {editTargets.includes('InformasiUmum') && (
+                                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+                                              <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">Ubah Informasi Umum</h4>
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Kecamatan</label>
+                                                      <select name="kecamatan" value={editFormData.kecamatan || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                                                          <option value="">-- Pilih Kecamatan --</option>
+                                                          {DATA_KECAMATAN.map(kec => <option key={kec} value={kec}>{kec}</option>)}
+                                                      </select>
+                                                  </div>
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Kombel</label>
+                                                      <select name="jenisKombel" value={editFormData.jenisKombel || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                                                          <option value="">-- Pilih Jenis Kombel --</option>
+                                                          {JENIS_KOMBEL.map(jenis => <option key={jenis} value={jenis}>{jenis}</option>)}
+                                                      </select>
+                                                  </div>
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Jenis Pengurus</label>
+                                                      <select name="jenisPengurus" value={editFormData.jenisPengurus || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                                                          <option value="">-- Pilih Jenis Pengurus --</option>
+                                                          {JENIS_PENGURUS_KOMBEL.map(jenis => <option key={jenis} value={jenis}>{jenis}</option>)}
+                                                      </select>
+                                                  </div>
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Kombel</label>
+                                                      <select name="namaKombel" value={editFormData.namaKombel || ''} onChange={handleEditInputChange} disabled={!editFormData.jenisKombel} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400">
+                                                          <option value="">{!editFormData.jenisKombel ? "Pilih Jenis Kombel dulu" : "-- Pilih Nama Kombel --"}</option>
+                                                          {editFormData.jenisKombel && [...new Set(NAMA_KOMBEL_MAPPING[editFormData.jenisKombel] || [])].map((nama, index) => (
+                                                              <option key={`${nama}-${index}`} value={nama}>{nama}</option>
+                                                          ))}
+                                                      </select>
+                                                  </div>
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      {editTargets.filter(t => t !== 'SK' && t !== 'InformasiUmum').map(target => (
+                                          <div key={target} className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+                                              <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">
+                                                  Ubah Data {
+                                                      target === 'Ketua' ? 'Ketua' :
+                                                      target === 'WakilKetua' ? 'Wakil Ketua' :
+                                                      target === 'Sekretaris' ? 'Sekretaris' :
+                                                      target === 'Bendahara' ? 'Bendahara' :
+                                                      `Bidang ${target}`
+                                                  }
+                                              </h4>
+                                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama</label>
+                                                      <input type="text" name={`nama${target}`} value={editFormData[`nama${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                  </div>
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">Instansi</label>
+                                                      <input type="text" name={`instansi${target}`} value={editFormData[`instansi${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                  </div>
+                                                  <div>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">No HP/WA</label>
+                                                      <input type="tel" name={`noHp${target}`} value={editFormData[`noHp${target}`] || ''} onChange={handleEditInputChange} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                  </div>
+                                              </div>
+                                          </div>
+                                      ))}
+
+                                      {editTargets.includes('SK') && (
+                                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
+                                              <h4 className="font-semibold text-slate-800 text-sm mb-4 border-b border-slate-200 pb-2">Ubah Dokumen SK</h4>
+                                              <p className="text-xs text-slate-600 mb-3 leading-relaxed">Pilih file PDF SK baru untuk menggantikan file lama. File lama akan ditimpa dengan file yang baru Anda unggah. Biarkan jika tidak jadi mengganti.</p>
+                                              <input 
+                                                  type="file" 
+                                                  accept="application/pdf"
+                                                  onChange={handleEditFileChange} 
+                                                  className="w-full rounded-md border border-slate-300 bg-white py-2 px-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                                              />
+                                              {editFormData.linkSK && !editSkFile && (
+                                                  <p className="mt-3 text-xs text-slate-500 font-medium flex items-center gap-1"><CheckCircle className="w-4 h-4 text-emerald-500" /> SK lama saat ini aman dan belum tergantikan.</p>
+                                              )}
+                                              {editSkFile && (
+                                                  <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+                                                      <p className="text-xs text-indigo-800 font-medium flex items-start gap-2">
+                                                          <UploadCloud className="w-4 h-4 shrink-0 mt-0.5" /> 
+                                                          <span>File <b>{editSkFile.name}</b> akan diunggah dan menimpa SK lama saat Anda menyimpan perubahan.</span>
+                                                      </p>
+                                                  </div>
+                                              )}
+                                          </div>
+                                      )}
+                                      
+                                      {editTargets.length > 0 && (
+                                          <p className="text-xs text-amber-600 mt-4 bg-amber-50 p-2 rounded-md border border-amber-100 flex gap-1 items-start">
+                                              <AlertCircle className="w-4 h-4 shrink-0"/> Saat Anda mengklik "Simpan Perubahan", data-data ini akan menimpa data lama.
+                                          </p>
+                                      )}
+                                  </div>
+                              )}
+                          </div>
+                          
+                          <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-3 rounded-b-xl z-10 shrink-0">
+                              {!isEditingDetail ? (
+                                  <button onClick={() => setIsEditingDetail(true)} className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
+                                      <Edit2 className="w-4 h-4"/> Edit Data
+                                  </button>
+                              ) : (
+                                  <>
+                                      <button onClick={() => { setIsEditingDetail(false); setEditTargets([]); }} disabled={savingEdit} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Batal</button>
+                                      <button onClick={handleSaveEdit} disabled={savingEdit || editTargets.length === 0} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg flex items-center gap-2 transition-colors">
+                                          {savingEdit ? 'Menyimpan...' : <><Save className="w-4 h-4"/> Simpan Perubahan</>}
+                                      </button>
+                                  </>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* MODAL GLOBAL: UPLOAD SK */}
+              {uploadModal && (
+                  <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+                      <div className="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden animate-fadeIn">
+                          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                              <h3 className="font-semibold text-slate-800">Upload File PDF SK</h3>
+                              <button onClick={() => setUploadModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                          </div>
+                          <form onSubmit={handleUpdateSK} className="p-6">
+                              {uploadModal.error && (
+                                  <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 flex items-start gap-2">
+                                      <AlertCircle className="w-5 h-5 shrink-0" />
+                                      <p>{uploadModal.error}</p>
+                                  </div>
+                              )}
+                              <p className="text-sm text-slate-600 mb-4">Unggah file dokumen SK (wajib PDF, maks 2 MB) untuk <b>{uploadModal.namaKombel}</b>.</p>
+                              <input 
+                                  type="file" 
+                                  accept="application/pdf"
+                                  required 
+                                  onChange={handleModalFileChange} 
+                                  className="w-full rounded-lg border border-slate-300 py-2 px-3 text-sm mb-4 focus:outline-none focus:border-indigo-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" 
+                              />
+                              <button type="submit" disabled={uploadingModal} className="w-full bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-70 flex justify-center items-center gap-2">
+                                  {uploadingModal ? 'Mengunggah ke Drive...' : 'Simpan SK'}
+                              </button>
+                          </form>
+                      </div>
+                  </div>
+              )}
+
+              {/* MODAL ADMIN: PILIH VERIFIKASI PERBAIKAN */}
+              {adminVerifyModal && (
+                  <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+                      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fadeIn border border-slate-100">
+                          <div className="bg-amber-500 text-white px-6 py-4 flex items-center justify-between">
+                              <h3 className="font-bold text-base flex items-center gap-2">
+                                  <AlertCircle className="w-5 h-5" /> Verifikasi Perbaikan Data
+                              </h3>
+                              <button onClick={() => setAdminVerifyModal(null)} className="text-amber-100 hover:text-white"><X className="w-5 h-5"/></button>
+                          </div>
+                          <form onSubmit={handleProcessCorrectionRequest} className="p-6 space-y-4">
+                              <p className="text-xs text-slate-600">Pilih bagian mana dari <b>{adminVerifyModal.namaKombel}</b> yang harus diperbaiki oleh responden:</p>
+                              
+                              <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                                      <input 
+                                          type="checkbox" 
+                                          checked={adminVerifyModal.targets?.includes('info_umum')}
+                                          onChange={(e) => {
+                                              const checked = e.target.checked;
+                                              setAdminVerifyModal(prev => ({
+                                                  ...prev,
+                                                  targets: checked ? [...(prev.targets || []), 'info_umum'] : prev.targets.filter(t => t !== 'info_umum')
+                                              }));
+                                          }}
+                                          className="rounded text-amber-600 focus:ring-amber-500" 
+                                      />
+                                      Informasi Umum Kombel (Kecamatan / Jenis / Nama)
+                                  </label>
+
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                                      <input 
+                                          type="checkbox" 
+                                          checked={adminVerifyModal.targets?.includes('pengurus_kombel')}
+                                          onChange={(e) => {
+                                              const checked = e.target.checked;
+                                              setAdminVerifyModal(prev => ({
+                                                  ...prev,
+                                                  targets: checked ? [...(prev.targets || []), 'pengurus_kombel'] : prev.targets.filter(t => t !== 'pengurus_kombel')
+                                              }));
+                                          }}
+                                          className="rounded text-amber-600 focus:ring-amber-500" 
+                                      />
+                                      Susunan / Data Pengurus Kombel
+                                  </label>
+
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                                      <input 
+                                          type="checkbox" 
+                                          checked={adminVerifyModal.targets?.includes('sk_kombel')}
+                                          onChange={(e) => {
+                                              const checked = e.target.checked;
+                                              setAdminVerifyModal(prev => ({
+                                                  ...prev,
+                                                  targets: checked ? [...(prev.targets || []), 'sk_kombel'] : prev.targets.filter(t => t !== 'sk_kombel')
+                                              }));
+                                          }}
+                                          className="rounded text-amber-600 focus:ring-amber-500" 
+                                      />
+                                      Dokumen SK Kombel (Format/File SK)
+                                  </label>
+                              </div>
+
+                              <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">Catatan Admin untuk Responden:</label>
+                                  <textarea 
+                                      rows="3" 
+                                      value={adminVerifyModal.pesan} 
+                                      onChange={(e) => setAdminVerifyModal({ ...adminVerifyModal, pesan: e.target.value })}
+                                      placeholder="Tuliskan alasan perbaikan secara spesifik..." 
+                                      className="w-full text-xs p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:border-amber-500"
+                                      required
+                                  ></textarea>
+                              </div>
+
+                              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                  <button type="button" onClick={() => setAdminVerifyModal(null)} className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg">Batal</button>
+                                  <button type="submit" className="px-4 py-2 text-xs text-white bg-amber-600 hover:bg-amber-700 font-semibold rounded-lg shadow-sm">Kirim Catatan</button>
+                              </div>
+                          </form>
+                      </div>
+                  </div>
+              )}
+
               {isLocalMode && (
                   <div className="bg-amber-50 text-amber-800 px-4 py-2.5 text-sm text-center font-medium border-b border-amber-200 flex justify-center items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
                       Aplikasi berjalan dalam Mode Demo Lokal. Ganti konfigurasi Firebase di kode (baris ~65) untuk menyimpan data secara permanen.
                   </div>
               )}
-              <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+
+              <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
                 <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="bg-indigo-600 text-white p-2 rounded-lg"><Users className="w-5 h-5" /></div>
                     <div>
-                        <h1 className="text-xl font-bold text-slate-800 leading-none">SiData Kombel</h1>
-                        <p className="text-xs text-slate-500 mt-1">Sistem Pendataan Komunitas Belajar</p>
+                        <h1 className="text-xl font-bold text-slate-800 leading-none">PENA HALUT_Pengurus Kombel</h1>
+                        <p className="text-xs text-slate-500 mt-1">Sistem Pendataan Pengurus Komunitas Belajar Kab. Halmahera Utara</p>
                     </div>
                   </div>
                 </div>
@@ -1385,7 +1665,135 @@
                 </div>
               </nav>
 
-              <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {/* Banner Persisten jika ada aksi diperlukan namun popup sudah ditutup */}
+              {!showMissingSkMessage && actionRequiredData.length > 0 && (
+                  <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between z-20">
+                      <div className="max-w-6xl mx-auto w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-amber-800 text-sm font-medium">
+                              <AlertCircle className="w-5 h-5" />
+                              <span>Ada {actionRequiredData.length} Kombel yang memerlukan kelengkapan/perbaikan data.</span>
+                          </div>
+                          <button 
+                              onClick={() => setShowMissingSkMessage(true)}
+                              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors whitespace-nowrap shadow-sm"
+                          >
+                              Lihat Daftar
+                          </button>
+                      </div>
+                  </div>
+              )}
+
+              <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
+                
+                {/* POP-UP MODAL OVERLAY: DAFTAR PERLU PERBAIKAN & SK BELUM DIUNGGAH */}
+                {showMissingSkMessage && actionRequiredData.length > 0 && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-40 p-4 animate-fadeIn">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]">
+                            
+                            {/* Modal Header */}
+                            <div className="bg-amber-500 text-white px-6 py-4 flex items-center justify-between shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-amber-600/50 rounded-lg">
+                                        <Bell className="w-6 h-6 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold">Pemberitahuan Sistem</h3>
+                                        <p className="text-xs text-amber-100">Daftar Kombel yang Memerlukan Tindakan</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowMissingSkMessage(false)}
+                                    className="text-amber-100 hover:text-white hover:bg-amber-600/60 rounded-full p-1.5 transition-colors"
+                                    title="Tutup (x)"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="p-6 overflow-y-auto space-y-4">
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2.5">
+                                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                    <p>
+                                        Terdapat <b>{actionRequiredData.length} Kombel</b> yang memerlukan tindakan perbaikan atau belum mengunggah file SK. Silakan lakukan perbaikan langsung dari daftar di bawah ini.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {actionRequiredData.map(kombel => {
+                                        const isCorrection = kombel.statusVerifikasi === 'perlu_perbaikan';
+                                        return (
+                                        <div key={kombel.id} className="flex flex-col bg-slate-50 p-4 rounded-xl border border-slate-200 hover:border-amber-300 transition-colors gap-3">
+                                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                                <div>
+                                                    <span className="font-bold text-slate-800 text-sm block">{kombel.namaKombel}</span>
+                                                    <span className="text-xs text-slate-500">{kombel.kecamatan} • {kombel.jenisPengurus}</span>
+                                                    
+                                                    {/* Badge Bagian yang harus diperbaiki */}
+                                                    {isCorrection && kombel.targetPerbaikan && kombel.targetPerbaikan.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mt-2">
+                                                            {kombel.targetPerbaikan.includes('info_umum') && (
+                                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-medium rounded-full">Informasi Umum</span>
+                                                            )}
+                                                            {kombel.targetPerbaikan.includes('pengurus_kombel') && (
+                                                                <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-medium rounded-full">Pengurus</span>
+                                                            )}
+                                                            {kombel.targetPerbaikan.includes('sk_kombel') && (
+                                                                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-medium rounded-full">File SK</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex shrink-0">
+                                                    {isCorrection ? (
+                                                        <button
+                                                            onClick={() => handleOpenEditFromPopup(kombel)}
+                                                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" /> Perbaiki Data
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => setUploadModal(kombel)}
+                                                            className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                        >
+                                                            <Upload className="w-4 h-4" /> Unggah SK
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Reason Badge */}
+                                            {isCorrection ? (
+                                                <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-md text-xs text-rose-700 flex gap-2 items-start">
+                                                    <MessageSquare className="w-4 h-4 shrink-0 mt-0.5" />
+                                                    <span><b>Catatan Admin:</b> {kombel.pesanPerbaikan}</span>
+                                                </div>
+                                            ) : (
+                                                <div className="p-2.5 bg-amber-100/50 border border-amber-200 rounded-md text-xs text-amber-800 flex gap-2 items-center">
+                                                    <FileText className="w-4 h-4 shrink-0" />
+                                                    <span>Dokumen SK Belum Diunggah.</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )})}
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="bg-slate-50 border-t border-slate-100 px-6 py-3.5 flex justify-end shrink-0">
+                                <button
+                                    onClick={() => setShowMissingSkMessage(false)}
+                                    className="px-5 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-200/80 hover:bg-slate-200 rounded-lg transition-colors"
+                                >
+                                    Tutup Pesan
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'dashboard' && renderDashboard()}
                 {activeTab === 'form' && renderForm()}
                 {activeTab === 'data' && renderDataTab()}
